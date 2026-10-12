@@ -1,98 +1,110 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# ShopFlow
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservices in a single monorepo.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+> **Status:** early scaffold. Each service and shared library has been generated with the Nest CLI, but no business logic, messaging, or persistence is implemented yet.
 
-## Description
+## Services
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Service        | Path                 | Default port | Responsibility (planned)                          |
+| -------------- | -------------------- | ------------ | ------------------------------------------------- |
+| `gateway`      | `apps/gateway`       | 3000         | Public HTTP entry point; routes to other services |
+| `user`         | `apps/user`          | 3001         | Accounts, authentication, profiles                |
+| `product`      | `apps/product`       | 3002         | Product catalog                                   |
+| `inventory`    | `apps/inventory`     | 3003         | Stock levels and reservations                     |
+| `order`        | `apps/order`         | 3004         | Order creation and lifecycle                      |
+| `payment`      | `apps/payment`       | 3005         | Payment processing                                |
+| `notification` | `apps/notification`  | 3006         | Email / SMS / push notifications                  |
 
-## Project setup
+`gateway` is the default project, so Nest CLI commands without a project name target it.
 
-```bash
-$ npm install
+## Shared libraries
+
+Imported via TypeScript path aliases (see `tsconfig.json`).
+
+| Library  | Alias          | Purpose (planned)                          |
+| -------- | -------------- | ------------------------------------------ |
+| `common` | `@app/common`  | Shared utilities, DTOs, guards, filters    |
+| `events` | `@app/events`  | Event names and payload contracts          |
+| `kafka`  | `@app/kafka`   | Kafka client/producer/consumer wiring      |
+| `proto`  | `@app/proto`   | gRPC protobuf definitions                  |
+
+## Project structure
+
+```
+shopflow/
+├── apps/
+│   ├── gateway/
+│   ├── inventory/
+│   ├── notification/
+│   ├── order/
+│   ├── payment/
+│   ├── product/
+│   └── user/
+├── libs/
+│   ├── common/
+│   ├── events/
+│   ├── kafka/
+│   └── proto/
+├── nest-cli.json      # monorepo project definitions
+└── package.json
 ```
 
-## Compile and run the project
+## Getting started
+
+### Prerequisites
+
+- Node.js 20+
+- npm
+
+### Install
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
+### Run a service
+
+Pass the project name to the Nest CLI:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npx nest start gateway --watch
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Each service listens on its default port from the table above, so several can run side by side. Override it with the `PORT` environment variable:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# bash
+PORT=4001 npx nest start user --watch
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+```powershell
+# PowerShell
+$env:PORT=4001; npx nest start user --watch
+```
 
-## Resources
+### Build
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+npx nest build gateway        # outputs to dist/apps/gateway
+node dist/apps/gateway/main
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Scripts
 
-## Support
+| Command              | Description                              |
+| -------------------- | ---------------------------------------- |
+| `npm run build`      | Build (gateway by default)               |
+| `npm run start:dev`  | Start in watch mode (gateway by default) |
+| `npm run start:prod` | Run the built gateway                    |
+| `npm run lint`       | Lint and auto-fix with ESLint            |
+| `npm run format`     | Format `apps/` and `libs/` with Prettier |
+| `npm test`           | Run unit tests (Jest)                    |
+| `npm run test:cov`   | Run unit tests with coverage             |
+| `npm run test:e2e`   | Run gateway end-to-end tests             |
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+UNLICENSED — private project.

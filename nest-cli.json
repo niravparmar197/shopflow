@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/shopflow/src",
+  "sourceRoot": "apps/gateway/src",
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "tsConfigPath": "apps/shopflow/tsconfig.app.json"
+    "tsConfigPath": "apps/gateway/tsconfig.app.json"
   },
   "monorepo": true,
-  "root": "apps/shopflow",
+  "root": "apps/gateway",
   "projects": {
     "common": {
       "type": "library",
@@ -98,15 +98,6 @@
       "sourceRoot": "libs/proto/src",
       "compilerOptions": {
         "tsConfigPath": "libs/proto/tsconfig.lib.json"
-      }
-    },
-    "shopflow": {
-      "type": "application",
-      "root": "apps/shopflow",
-      "entryFile": "main",
-      "sourceRoot": "apps/shopflow/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/shopflow/tsconfig.app.json"
       }
     },
     "user": {
