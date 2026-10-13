@@ -21,6 +21,7 @@ const esc = (v: unknown) => String(v).replace(/[&<>"']/g, (c) => ESCAPES[c]);
 
 const REASONS: Record<string, string> = {
   PAYMENT_TIMEOUT: 'the payment was not completed in time',
+  STOCK_TIMEOUT: 'we could not confirm stock for it in time',
   OUT_OF_STOCK: 'an item in your order went out of stock',
   CARD_DECLINED: 'the card was declined',
 };

@@ -37,6 +37,14 @@ export const envSchema = z.object({
     .transform((v) => v === 'true'),
   // 6-field cron (seconds first), UTC. Unset → the job's default.
   HOUSEKEEPING_CRON: z.string().min(1).optional(),
+  ORDER_EXPIRY_CRON: z.string().min(1).optional(),
+  RESERVATION_EXPIRY_CRON: z.string().min(1).optional(),
+  // The TIMING CONTRACT (README "Auto-cancel"): payment TTL (15) < confirmed
+  // timeout (30), and the order's max life (10 + 30) < the hold (60), so
+  // inventory never releases stock for an order that can still be paid.
+  ORDER_PENDING_TIMEOUT_MIN: z.coerce.number().int().positive().default(10),
+  ORDER_CONFIRMED_TIMEOUT_MIN: z.coerce.number().int().positive().default(30),
+  RESERVATION_HOLD_MINUTES: z.coerce.number().int().positive().default(60),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(500),
   OUTBOX_BATCH: z.coerce.number().int().positive().default(100),
 
