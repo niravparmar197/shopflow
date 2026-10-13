@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, Env, RedisModule } from '@app/common';
+import { KafkaModule } from '@app/kafka';
 import { ProductClientModule } from '@app/proto';
 import { CartController } from './cart/cart.controller';
 import { CartRepository } from './cart/cart.repository';
@@ -17,7 +18,6 @@ import { IdempotencyService } from './idempotency/idempotency.service';
 import { CheckoutService } from './orders/checkout.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
-import { OutboxService } from './outbox/outbox.service';
 
 @Module({
   imports: [
@@ -33,6 +33,7 @@ import { OutboxService } from './outbox/outbox.service';
       }),
     }),
     TypeOrmModule.forFeature(ORDER_ENTITIES), // coupons, orders, outbox
+    KafkaModule.forRoot(), // outbox writer + relay to Kafka
     RedisModule, // carts
     ProductClientModule, // live prices over gRPC
     // Public key only: this service checks tokens but never creates them.
@@ -55,7 +56,6 @@ import { OutboxService } from './outbox/outbox.service';
     CheckoutService,
     OrdersService,
     IdempotencyService,
-    OutboxService,
   ],
 })
 export class OrderModule {}

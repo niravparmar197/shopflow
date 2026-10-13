@@ -5,6 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { EventEnvelope } from '@app/events';
 
 /**
  * Transactional outbox: an event is saved in the same transaction as the
@@ -32,7 +33,7 @@ export class OutboxEvent {
   eventType!: string; // 'order.created'
 
   @Column({ type: 'jsonb' })
-  payload!: Record<string, unknown>;
+  payload!: EventEnvelope<object>; // exactly what goes to Kafka
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

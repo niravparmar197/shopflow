@@ -142,9 +142,9 @@ describe('Orders (e2e)', () => {
     expect(event.published_at).toBeNull();
     expect(event.payload).toMatchObject({
       eventId: event.id,
-      orderId: order.id,
-      userId: user.id,
-      totalPaise: CART_TOTAL,
+      type: 'order.created',
+      version: 1,
+      data: { orderId: order.id, userId: user.id, totalPaise: CART_TOTAL },
     });
 
     expect(await cartItems(user.auth)).toHaveLength(0);
@@ -177,13 +177,13 @@ describe('Orders (e2e)', () => {
       expect(await count('outbox')).toBe(1);
     });
 
-    it('5 parallel requests with the same key: exactly one order', async () => {
+    it('20 parallel requests with the same key: exactly one order', async () => {
       const user = newUser();
       await fillCart(user.auth);
       const key = randomUUID();
 
       const results = await Promise.all(
-        Array.from({ length: 5 }, () => placeOrder(user.auth, key)),
+        Array.from({ length: 20 }, () => placeOrder(user.auth, key)),
       );
       const statuses = results.map((r) => r.status);
       expect(statuses).toContain(201);

@@ -7,11 +7,12 @@ import {
 import { randomUUID } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DataSource, EntityManager } from 'typeorm';
+import { OrderEvents, type OrderCreatedV1 } from '@app/events';
+import { OutboxService } from '@app/kafka';
 import { CartRepository } from '../cart/cart.repository';
 import type { CartLine } from '../cart/cart.service';
 import { CatalogClient } from '../catalog/catalog.client';
 import { CouponsService } from '../coupons/coupons.service';
-import { OutboxService } from '../outbox/outbox.service';
 import { OrderItem } from './order-item.entity';
 import { Order } from './order.entity';
 import { OrderStatus } from './order-status';
@@ -170,11 +171,12 @@ export class CheckoutService {
       );
 
       // Same commit as the order: both are saved, or neither.
-      await this.outbox.add(m, {
+      await this.outbox.add<OrderCreatedV1>(m, {
         aggregateType: 'order',
         aggregateId: saved.id,
-        eventType: 'order.created',
-        payload: {
+        eventType: OrderEvents.CREATED,
+        correlationId: cid,
+        data: {
           orderId: saved.id,
           userId,
           items: lines.map((l) => ({

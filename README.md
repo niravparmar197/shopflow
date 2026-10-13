@@ -216,6 +216,7 @@ POST /v1/orders ─▶ Redis checkout lock (per user)
 | `npm run migration:run:order`                                                 | Apply order service migrations                                     |
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
+| `npm run kafka:topics`                                                        | Create the Kafka topics (idempotent; `KAFKA_RF=3` in production)   |
 | `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
