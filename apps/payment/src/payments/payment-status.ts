@@ -11,14 +11,14 @@ export enum PaymentStatus {
 /*
  * The same idea as the order's State pattern, smaller: a transition table.
  *
- * PENDING ─succeed─► SUCCEEDED
- *    └────expire───► EXPIRED ─(late success)─► REFUND_PENDING ─(refund)─► REFUNDED
+ * PENDING ─succeed─► SUCCEEDED ─(order cancelled)─┐
+ *    └────expire───► EXPIRED ─(late success)──────┴─► REFUND_PENDING ─(refund)─► REFUNDED
  */
 const ALLOWED: Record<PaymentStatus, readonly PaymentStatus[]> = {
   [PaymentStatus.PENDING]: [PaymentStatus.SUCCEEDED, PaymentStatus.EXPIRED],
   [PaymentStatus.EXPIRED]: [PaymentStatus.REFUND_PENDING],
   [PaymentStatus.REFUND_PENDING]: [PaymentStatus.REFUNDED],
-  [PaymentStatus.SUCCEEDED]: [],
+  [PaymentStatus.SUCCEEDED]: [PaymentStatus.REFUND_PENDING],
   [PaymentStatus.REFUNDED]: [],
 };
 

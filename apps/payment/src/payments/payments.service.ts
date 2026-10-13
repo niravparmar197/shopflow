@@ -4,13 +4,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import type { Env } from '@app/common';
 import {
+  type OrderCancelledV1,
   type OrderConfirmedV1,
   PaymentEvents,
   type PaymentSucceededV1,
 } from '@app/events';
 import { OutboxService } from '@app/kafka';
 import { Payment } from './payment.entity';
-import { PaymentStatus } from './payment-status';
+import { assertTransition, PaymentStatus } from './payment-status';
 
 @Injectable()
 export class PaymentsService {
@@ -74,6 +75,48 @@ export class PaymentsService {
     this.logger.log(
       `Payment ${paymentId} for order ${o.orderId}: ${free ? 'free, SUCCEEDED' : 'PENDING'}`,
     );
+  }
+
+  /**
+   * order.cancelled → stop taking money, or give it back. Runs inside the
+   * consumer's transaction; the row lock orders it against webhooks and
+   * the sweeper.
+   */
+  async onOrderCancelled(m: EntityManager, o: OrderCancelledV1) {
+    const repo = m.getRepository(Payment);
+    const p = await repo.findOne({
+      where: { orderId: o.orderId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!p) return; // cancelled before a payment existed
+
+    switch (p.status) {
+      case PaymentStatus.PENDING:
+        // No more money for this order. A success webhook after this is a
+        // late success → refund (WebhookService).
+        assertTransition(p.status, PaymentStatus.EXPIRED);
+        p.status = PaymentStatus.EXPIRED;
+        p.lastError = `ORDER_CANCELLED:${o.reason}`.slice(0, 300);
+        await repo.save(p);
+        this.logger.log(
+          `Order ${o.orderId} cancelled → payment ${p.id} EXPIRED`,
+        );
+        return;
+
+      case PaymentStatus.SUCCEEDED:
+        // Paid, but the order was cancelled anyway (e.g. the F8 auto-cancel
+        // won the race) → refund. The sweeper's refund pass picks it up.
+        assertTransition(p.status, PaymentStatus.REFUND_PENDING);
+        p.status = PaymentStatus.REFUND_PENDING;
+        await repo.save(p);
+        this.logger.warn(
+          `Order ${o.orderId} cancelled after payment → refund queued`,
+        );
+        return;
+
+      default:
+        return; // EXPIRED / REFUND_PENDING / REFUNDED: nothing to do
+    }
   }
 
   async findMine(userId: string, orderId: string) {

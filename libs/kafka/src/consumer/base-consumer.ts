@@ -33,8 +33,9 @@ function header(headers: IHeaders | undefined, name: string) {
 
 /**
  * Template Method: the steps every consumer takes are fixed here; a subclass
- * only says what to read (topic, groupId, eventTypes), how to validate it
- * (parse) and what to do (handle).
+ * only says what to read (topics, groupId), which events it wants and how to
+ * validate them (schemas: eventType → zod schema) and what to do (handle).
+ * Adding an event = one line in `schemas` and one `case` in handle().
  *
  *   1. decode + validate the envelope and data
  *   2. one transaction: record the event in processed_events (already
@@ -58,14 +59,13 @@ export abstract class BaseConsumer
   private readonly consumers: Consumer[] = [];
   private readonly stopping = new AbortController();
 
-  protected abstract readonly topic: string;
+  protected abstract readonly topics: readonly string[];
   protected abstract readonly groupId: string;
-  protected abstract readonly eventTypes: readonly string[];
+  /** The events this consumer handles (v1 data schemas); others are skipped. */
+  protected abstract readonly schemas: Readonly<Record<string, ZodType>>;
 
-  /** Validates event.data; throws PoisonMessageError if it's bad. */
-  protected abstract parse(event: EventEnvelope): unknown;
-
-  /** Business logic, inside the transaction: write only through `m`. */
+  /** Business logic, inside the transaction: write only through `m`.
+   *  event.data has already been validated against schemas[event.type]. */
   protected abstract handle(
     m: EntityManager,
     event: EventEnvelope<unknown>,
@@ -90,8 +90,8 @@ export abstract class BaseConsumer
     if (!this.config.get('KAFKA_CONSUMERS_ENABLED', { infer: true })) return;
     // In the background: the service (HTTP, health) starts even while Kafka
     // is down, and the consumers join once it's back.
-    void this.start(this.groupId, this.topic, (p) => this.onMain(p));
-    void this.start(`${this.groupId}-retry`, this.retryTopic, (p) =>
+    void this.start(this.groupId, this.topics, (p) => this.onMain(p));
+    void this.start(`${this.groupId}-retry`, [this.retryTopic], (p) =>
       this.onRetry(p),
     );
   }
@@ -105,7 +105,7 @@ export abstract class BaseConsumer
 
   private async start(
     groupId: string,
-    topic: string,
+    topics: readonly string[],
     onMessage: (p: EachMessagePayload) => Promise<void>,
   ) {
     while (!this.stopping.signal.aborted) {
@@ -117,7 +117,7 @@ export abstract class BaseConsumer
       try {
         await consumer.connect();
         // Only matters for a new group (no saved offset): don't skip old events.
-        await consumer.subscribe({ topic, fromBeginning: true });
+        await consumer.subscribe({ topics: [...topics], fromBeginning: true });
         await consumer.run({
           autoCommit: false, // committed by hand, once the message is settled
           partitionsConsumedConcurrently: 3,
@@ -135,10 +135,13 @@ export abstract class BaseConsumer
           },
         });
         this.consumers.push(consumer);
-        this.logger.log(`Consuming ${topic} as group ${groupId}`);
+        this.logger.log(`Consuming ${topics.join(', ')} as group ${groupId}`);
         return;
       } catch (err: unknown) {
-        this.logger.error({ err, topic }, 'Consumer failed to start, retrying');
+        this.logger.error(
+          { err, topics },
+          'Consumer failed to start, retrying',
+        );
         await consumer.disconnect().catch(() => undefined);
         await sleep(START_RETRY_MS, undefined, {
           signal: this.stopping.signal,
@@ -148,11 +151,12 @@ export abstract class BaseConsumer
   }
 
   // ---------- main topic ----------
-  private async onMain({ message }: EachMessagePayload) {
+  private async onMain({ topic, message }: EachMessagePayload) {
     try {
       await this.process(message.value);
     } catch (err) {
-      await this.routeFailure(message, toError(err), 0, this.topic);
+      // The topic it really came from: we may read several.
+      await this.routeFailure(message, toError(err), 0, topic);
     }
   }
 
@@ -162,7 +166,7 @@ export abstract class BaseConsumer
     const attempt = Number(header(message.headers, 'x-attempt') ?? 1);
     const dueAt = Number(header(message.headers, 'x-retry-at') ?? 0);
     const originalTopic =
-      header(message.headers, 'x-original-topic') ?? this.topic;
+      header(message.headers, 'x-original-topic') ?? this.topics[0];
 
     // Wait until it's due, heartbeating so the group doesn't drop us.
     while (Date.now() < dueAt) {
@@ -183,10 +187,12 @@ export abstract class BaseConsumer
   // ---------- the template: same steps for main and retry ----------
   private async process(value: Buffer | null) {
     const event = this.decode(value);
-    // Other event types on this topic aren't for us: just move past them.
-    if (!this.eventTypes.includes(event.type)) return;
+    // Other event types on these topics aren't for us: just move past them.
+    // (hasOwn: a type like "constructor" must not hit Object.prototype)
+    if (!Object.hasOwn(this.schemas, event.type)) return;
+    const schema = this.schemas[event.type];
 
-    const data = this.parse(event);
+    const data = this.parseData(schema, event);
     await this.ds.transaction(async (m) => {
       const fresh = await m
         .createQueryBuilder()
@@ -269,8 +275,8 @@ export abstract class BaseConsumer
     return result.data;
   }
 
-  /** For parse(): checks the schema version, then validates the data. */
-  protected parseData<T>(
+  /** Checks the schema version, then validates the data. */
+  private parseData<T>(
     schema: ZodType<T>,
     event: EventEnvelope,
     versions: number[] = [1],

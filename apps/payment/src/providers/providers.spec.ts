@@ -163,6 +163,7 @@ describe('payment status transitions', () => {
     [PaymentStatus.PENDING, PaymentStatus.EXPIRED],
     [PaymentStatus.EXPIRED, PaymentStatus.REFUND_PENDING],
     [PaymentStatus.REFUND_PENDING, PaymentStatus.REFUNDED],
+    [PaymentStatus.SUCCEEDED, PaymentStatus.REFUND_PENDING], // order cancelled after payment
   ])('allows %s → %s', (from, to) => {
     expect(() => assertTransition(from, to)).not.toThrow();
   });
