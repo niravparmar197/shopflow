@@ -61,6 +61,11 @@ jobs:
       - name: Integration tests (payment)
         run: npm run test:e2e:payment
 
+      # Real MongoDB + Redis (BullMQ) + Kafka, fake SMTP: projection,
+      # dedupe, templates, retries → FAILED, permanent errors, DLQ.
+      - name: Integration tests (notification)
+        run: npm run test:e2e:notification
+
       - name: Build all services
         run: |
           for app in gateway user product order payment inventory notification; do

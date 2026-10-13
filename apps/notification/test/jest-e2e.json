@@ -1,9 +1,37 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": ".",
-  "testEnvironment": "node",
-  "testRegex": ".e2e-spec.ts$",
+  "rootDir": "../../..",
+  "testRegex": "apps/notification/test/.*.e2e-spec.ts$",
   "transform": {
+    "node_modules.mongodb.lib.runtime_adapters\\.js$": [
+      "babel-jest",
+      {
+        "plugins": ["./tools/jest/dynamic-import-to-require.js"]
+      }
+    ],
+    "node_modules.@nestjs.(bull-shared|bullmq|config|jwt|mapped-types|mongoose|terminus|typeorm).+\\.js$": [
+      "babel-jest",
+      {
+        "plugins": [
+          "./tools/jest/rename-esm-require.js",
+          "babel-plugin-transform-import-meta",
+          "@babel/plugin-transform-modules-commonjs"
+        ]
+      }
+    ],
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "transformIgnorePatterns": [
+    "node_modules/(?!(@nestjs/(bull-shared|bullmq|config|jwt|mapped-types|mongoose|terminus|typeorm)/|mongodb/lib/runtime_adapters\\.js))"
+  ],
+  "testEnvironment": "node",
+  "moduleNameMapper": {
+    "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
+    "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
+    "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
+    "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
+  },
+  "testTimeout": 180000,
+  "globalSetup": "<rootDir>/apps/notification/test/e2e-setup.ts",
+  "globalTeardown": "<rootDir>/apps/notification/test/e2e-teardown.ts"
 }

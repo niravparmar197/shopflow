@@ -65,6 +65,10 @@ export class GatewayModule implements NestModule {
     const paymentService = this.config.getOrThrow('PAYMENT_SERVICE_URL', {
       infer: true,
     });
+    const notificationService = this.config.getOrThrow(
+      'NOTIFICATION_SERVICE_URL',
+      { infer: true },
+    );
 
     // Provider webhooks: many requests from a few IPs. A 429 would make the
     // provider retry for hours, so they skip the per-IP limit.
@@ -164,5 +168,11 @@ export class GatewayModule implements NestModule {
       .apply(jwtMiddleware(this.jwt), proxyTo(paymentService, 10_000))
       .exclude(webhooks)
       .forRoutes('v1/payments{/*path}');
+
+    // 11) Notification logs (support): JWT here; the notification service
+    //     checks the admin role.
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(notificationService))
+      .forRoutes('v1/notifications{/*path}');
   }
 }

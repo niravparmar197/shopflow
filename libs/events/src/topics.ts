@@ -25,6 +25,7 @@ export const CONSUMER_GROUPS = [
   'inventory-svc',
   'order-svc',
   'payment-svc',
+  'notification-svc',
 ] as const;
 
 /** Every topic the system uses; the tests create these in their Kafka. */

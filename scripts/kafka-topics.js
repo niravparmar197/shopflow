@@ -23,6 +23,8 @@ const TOPICS = [
   { name: 'order-svc.dlq', retentionMs: 14 * DAY_MS },
   { name: 'payment-svc.retry', retentionMs: 7 * DAY_MS },
   { name: 'payment-svc.dlq', retentionMs: 14 * DAY_MS },
+  { name: 'notification-svc.retry', retentionMs: 7 * DAY_MS },
+  { name: 'notification-svc.dlq', retentionMs: 14 * DAY_MS },
 ];
 
 async function main() {

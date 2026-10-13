@@ -161,7 +161,8 @@ describe('Order saga (e2e)', () => {
     expect(ev).toMatchObject({
       type: 'order.created',
       version: 1,
-      data: { orderId },
+      // customerEmail: snapshot from the JWT, for notifications
+      data: { orderId, customerEmail: expect.stringMatching(/@test\.dev$/) },
     });
     expect(header(msg.headers, 'event-id')).toBe(ev.eventId);
 

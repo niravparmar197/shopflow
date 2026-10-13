@@ -49,6 +49,17 @@ export class Order {
   })
   failureReason!: string | null;
 
+  // Snapshot at checkout (from the JWT), like the prices: the notification
+  // service gets it in order.created and never asks the user service.
+  // Null on orders placed before it existed.
+  @Column({
+    name: 'customer_email',
+    type: 'varchar',
+    length: 254,
+    nullable: true,
+  })
+  customerEmail!: string | null;
+
   @Column({ type: 'varchar', length: 3, default: 'INR' })
   currency!: string;
 
