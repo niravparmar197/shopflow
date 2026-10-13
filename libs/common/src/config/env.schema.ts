@@ -79,6 +79,7 @@ export const envSchema = z.object({
   ORDER_SERVICE_URL: z.url().optional(),
   INVENTORY_SERVICE_URL: z.url().optional(),
   PAYMENT_SERVICE_URL: z.url().optional(),
+  NOTIFICATION_SERVICE_URL: z.url().optional(),
 
   // Comma-separated browser origins allowed to call the API with cookies.
   CORS_ORIGINS: z.string().optional(),

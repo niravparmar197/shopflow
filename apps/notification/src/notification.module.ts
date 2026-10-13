@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CommonModule, type Env } from '@app/common';
 import { KafkaModule } from '@app/kafka';
@@ -35,6 +37,16 @@ import { NotificationsModule } from './notifications.module';
     }),
     // Producer for the retry/DLQ topics only: no outbox (no Postgres here).
     KafkaModule.forRoot({ outbox: false }),
+    // Public key only: checks tokens for the admin log endpoint.
+    JwtModule.registerAsync({
+      global: true,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        publicKey: readFileSync(
+          config.getOrThrow('JWT_PUBLIC_KEY_PATH', { infer: true }),
+        ),
+      }),
+    }),
     NotificationsModule,
   ],
 })

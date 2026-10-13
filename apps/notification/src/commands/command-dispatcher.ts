@@ -28,10 +28,13 @@ export class CommandDispatcher {
    *                   and the log gets written. Nothing is lost.
    */
   async dispatch(cmd: NotificationCommand) {
-    await this.queue.add(cmd.jobName, cmd.payload, {
-      ...DEFAULT_JOB_OPTIONS,
-      jobId: cmd.id,
-    });
+    // The job carries the log fields too: the worker may run before this
+    // log is written (or we crash first), and must be able to create it.
+    await this.queue.add(
+      cmd.jobName,
+      { ...cmd.payload, log: cmd.log },
+      { ...DEFAULT_JOB_OPTIONS, jobId: cmd.id },
+    );
 
     // $setOnInsert: never overwrites SENT if the worker was faster than us.
     await this.logs.updateOne(
