@@ -19,7 +19,7 @@ export interface FakeWebhookBody {
 /**
  * Fault injection for resilience tests:
  *   ok    → works
- *   fail  → 503 every time (opens the circuit)
+ *   fail  → 503 every time (opens the circuit); refunds fail too
  *   slow  → answers after 5 s (longer than our 2 s timeout)
  *   flaky → each payment fails twice with a 502, then works (retry wins)
  */
@@ -108,6 +108,11 @@ export class FakePaymentProvider implements PaymentProvider {
   }
 
   refund(providerPaymentId: string, amountPaise: number): Promise<void> {
+    if (this.mode === 'fail') {
+      return Promise.reject(
+        Object.assign(new Error('Fake refund down'), { statusCode: 503 }),
+      );
+    }
     this.refunds.push({ providerPaymentId, amountPaise });
     return Promise.resolve();
   }

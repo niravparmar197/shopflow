@@ -11,6 +11,8 @@ export interface BootstrapOptions {
   globalPrefix?: string;
   /** Set false when the service streams bodies through untouched (gateway). */
   bodyParser?: boolean;
+  /** Keep the request's original bytes in req.rawBody (webhook signatures). */
+  rawBody?: boolean;
   /** Service-specific setup (extra middleware etc.), run before listening. */
   configure?: (app: INestApplication) => void;
   /** Async startup work before the HTTP server listens (e.g. a gRPC server). */
@@ -50,6 +52,7 @@ export async function bootstrapService(
   const app = await NestFactory.create(rootModule, {
     bufferLogs: true,
     bodyParser: options.bodyParser ?? true,
+    rawBody: options.rawBody ?? false,
   });
   app.useLogger(app.get(Logger));
   configureApp(app, options);

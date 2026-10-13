@@ -59,6 +59,12 @@ export const envSchema = z.object({
   // Payments (payment service). Keys only ever in .env, never committed.
   PAYMENT_PROVIDER: z.enum(['razorpay', 'stripe', 'fake']).default('fake'),
   PAYMENT_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  // Expiry + refund-retry job. Every pod runs it (SKIP LOCKED splits the rows).
+  PAYMENT_SWEEPER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  PAYMENT_SWEEP_MS: z.coerce.number().int().positive().default(30_000),
   RAZORPAY_KEY_ID: optionalSecret,
   RAZORPAY_KEY_SECRET: optionalSecret,
   RAZORPAY_WEBHOOK_SECRET: optionalSecret,

@@ -22,3 +22,11 @@ export const PaymentFailedV1Schema = z.object({
   reason: z.string().min(1),
 });
 export type PaymentFailedV1 = z.infer<typeof PaymentFailedV1Schema>;
+
+export const PaymentRefundedV1Schema = z.object({
+  paymentId: z.uuid(),
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  amountPaise: z.number().int().nonnegative(),
+});
+export type PaymentRefundedV1 = z.infer<typeof PaymentRefundedV1Schema>;

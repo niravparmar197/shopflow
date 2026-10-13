@@ -66,7 +66,14 @@ export class GatewayModule implements NestModule {
       infer: true,
     });
 
-    // 1) Global limit for everything except health probes.
+    // Provider webhooks: many requests from a few IPs. A 429 would make the
+    // provider retry for hours, so they skip the per-IP limit.
+    const webhooks = {
+      path: 'v1/payments/webhooks/:provider',
+      method: RequestMethod.POST,
+    };
+
+    // 1) Global limit for everything except health probes and webhooks.
     consumer
       .apply(
         createRateLimiter(this.redis, {
@@ -76,7 +83,7 @@ export class GatewayModule implements NestModule {
           message: 'Too many requests',
         }),
       )
-      .exclude('health/{*path}')
+      .exclude('health/{*path}', webhooks)
       .forRoutes('{*path}');
 
     // 2) Stricter limit on login against password guessing.
@@ -145,12 +152,17 @@ export class GatewayModule implements NestModule {
       .apply(jwtMiddleware(this.jwt), proxyTo(inventoryService))
       .forRoutes('v1/inventory{/*path}');
 
-    // 9) Payments: JWT here; the payment service checks it again and only
-    //    shows the caller's own payments. (Provider webhooks will need a
-    //    route without JWT; they are signed instead.) 10 s timeout: checkout
-    //    retries the provider for up to ~6.6 s (3 × 2 s + backoff).
+    // 9) Payment webhooks: NO JWT (the provider has no user token); the
+    //    HMAC signature is the auth. The gateway has no body parser, so the
+    //    raw bytes reach the payment service unchanged.
+    consumer.apply(proxyTo(paymentService)).forRoutes(webhooks);
+
+    // 10) Payments: JWT here; the payment service checks it again and only
+    //     shows the caller's own payments. 10 s timeout: checkout retries
+    //     the provider for up to ~6.6 s (3 × 2 s + backoff).
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(paymentService, 10_000))
+      .exclude(webhooks)
       .forRoutes('v1/payments{/*path}');
   }
 }

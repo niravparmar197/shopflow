@@ -69,6 +69,11 @@ export class Payment {
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt!: Date;
 
+  // Refund LEASE: a pod sets this before calling the provider; others skip
+  // the row until it is 2 minutes old (then the refund is retried).
+  @Column({ name: 'refund_attempted_at', type: 'timestamptz', nullable: true })
+  refundAttemptedAt!: Date | null;
+
   @VersionColumn()
   version!: number;
 

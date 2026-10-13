@@ -161,7 +161,8 @@ describe('payment status transitions', () => {
   it.each([
     [PaymentStatus.PENDING, PaymentStatus.SUCCEEDED],
     [PaymentStatus.PENDING, PaymentStatus.EXPIRED],
-    [PaymentStatus.EXPIRED, PaymentStatus.REFUNDED],
+    [PaymentStatus.EXPIRED, PaymentStatus.REFUND_PENDING],
+    [PaymentStatus.REFUND_PENDING, PaymentStatus.REFUNDED],
   ])('allows %s → %s', (from, to) => {
     expect(() => assertTransition(from, to)).not.toThrow();
   });
@@ -170,6 +171,9 @@ describe('payment status transitions', () => {
     [PaymentStatus.SUCCEEDED, PaymentStatus.EXPIRED],
     [PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDED],
     [PaymentStatus.EXPIRED, PaymentStatus.SUCCEEDED],
+    // A refund always goes through REFUND_PENDING (the lease), never directly.
+    [PaymentStatus.EXPIRED, PaymentStatus.REFUNDED],
+    [PaymentStatus.REFUND_PENDING, PaymentStatus.SUCCEEDED],
     [PaymentStatus.REFUNDED, PaymentStatus.PENDING],
   ])('rejects %s → %s', (from, to) => {
     expect(() => assertTransition(from, to)).toThrow(ConflictException);
