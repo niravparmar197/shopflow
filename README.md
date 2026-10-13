@@ -124,18 +124,20 @@ Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
 
 ## Scripts
 
-| Command                                                                       | Description                              |
-| ----------------------------------------------------------------------------- | ---------------------------------------- |
-| `npm run build`                                                               | Build (gateway by default)               |
-| `npm run start:dev`                                                           | Start in watch mode (gateway by default) |
-| `npm run start:prod`                                                          | Run the built gateway                    |
-| `npm run lint`                                                                | Lint and auto-fix with ESLint            |
-| `npm run format`                                                              | Format `apps/` and `libs/` with Prettier |
-| `npm test`                                                                    | Run unit tests (Jest)                    |
-| `npm run test:cov`                                                            | Run unit tests with coverage             |
-| `npm run test:e2e`                                                            | Run integration tests (needs Docker)     |
-| `npm run migration:run:user`                                                  | Apply user service migrations            |
-| `npm run migration:generate:user -- apps/user/src/database/migrations/<Name>` | Generate a migration from entity changes |
+| Command                                                                       | Description                                                        |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `npm run build`                                                               | Build (gateway by default)                                         |
+| `npm run start:dev`                                                           | Start in watch mode (gateway by default)                           |
+| `npm run start:prod`                                                          | Run the built gateway                                              |
+| `npm run lint`                                                                | Lint and auto-fix with ESLint                                      |
+| `npm run format`                                                              | Format `apps/` and `libs/` with Prettier                           |
+| `npm test`                                                                    | Run unit tests (Jest)                                              |
+| `npm run test:cov`                                                            | Run unit tests with coverage                                       |
+| `npm run test:e2e`                                                            | Run integration tests (needs Docker)                               |
+| `npm run migration:run:user`                                                  | Apply user service migrations                                      |
+| `npm run migration:generate:user -- apps/user/src/database/migrations/<Name>` | Generate a migration from entity changes                           |
+| `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
+| `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
 

@@ -8,11 +8,21 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
+import { ClientsModule, Transport } from '@nestjs/microservices';
 import type Redis from 'ioredis';
 import { CommonModule, Env } from '@app/common';
+import {
+  grpcLoaderOptions,
+  PRODUCT_PACKAGE_NAME,
+  PRODUCT_PROTO_PATH,
+} from '@app/proto';
 import { jwtMiddleware } from './http/jwt.middleware';
 import { proxyTo } from './http/proxy';
 import { createRateLimiter } from './http/rate-limit';
+import {
+  PRODUCT_CLIENT,
+  ProductsController,
+} from './products/products.controller';
 import { REDIS, RedisShutdown, redisProvider } from './redis.provider';
 
 @Module({
@@ -27,7 +37,29 @@ import { REDIS, RedisShutdown, redisProvider } from './redis.provider';
         ),
       }),
     }),
+    // gRPC client for the product service (public reads).
+    ClientsModule.registerAsync([
+      {
+        name: PRODUCT_CLIENT,
+        inject: [ConfigService],
+        useFactory: (config: ConfigService<Env, true>) => {
+          const url: string = config.getOrThrow('PRODUCT_GRPC_URL', {
+            infer: true,
+          });
+          return {
+            transport: Transport.GRPC,
+            options: {
+              package: PRODUCT_PACKAGE_NAME,
+              protoPath: PRODUCT_PROTO_PATH,
+              url,
+              loader: grpcLoaderOptions,
+            },
+          };
+        },
+      },
+    ]),
   ],
+  controllers: [ProductsController],
   providers: [redisProvider, RedisShutdown],
 })
 export class GatewayModule implements NestModule {
@@ -41,6 +73,9 @@ export class GatewayModule implements NestModule {
   // request logger, which assigns the correlation id.
   configure(consumer: MiddlewareConsumer) {
     const userService = this.config.getOrThrow('USER_SERVICE_URL', {
+      infer: true,
+    });
+    const productService = this.config.getOrThrow('PRODUCT_SERVICE_URL', {
       infer: true,
     });
 
@@ -76,5 +111,14 @@ export class GatewayModule implements NestModule {
 
     // 4) Public auth routes: proxy only.
     consumer.apply(proxyTo(userService)).forRoutes('v1/auth{/*path}');
+
+    // 5) Admin product writes: JWT here, then HTTP proxy. The product service
+    //    checks the admin role itself. Reads go over gRPC (ProductsController).
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(productService))
+      .forRoutes(
+        { path: 'v1/products', method: RequestMethod.POST },
+        { path: 'v1/products/:id', method: RequestMethod.PATCH },
+      );
   }
 }

@@ -6,6 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CommonModule, Env } from '@app/common';
 import { Product, ProductSchema } from './products/product.schema';
 import { ProductsController } from './products/products.controller';
+import { ProductsGrpcController } from './products/products.grpc.controller';
 import { ProductsService } from './products/products.service';
 
 @Module({
@@ -32,7 +33,7 @@ import { ProductsService } from './products/products.service';
       }),
     }),
   ],
-  controllers: [ProductsController],
+  controllers: [ProductsController, ProductsGrpcController],
   providers: [ProductsService],
 })
 export class ProductModule {}

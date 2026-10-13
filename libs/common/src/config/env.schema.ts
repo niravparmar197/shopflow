@@ -24,6 +24,9 @@ export const envSchema = z.object({
   ACCESS_TOKEN_TTL: z.string().min(1).default('15m'),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(7),
 
+  GRPC_PORT: z.coerce.number().int().positive().optional(), // this service's gRPC server
+  PRODUCT_GRPC_URL: z.string().min(1).optional(), // host:port, no scheme
+
   USER_SERVICE_URL: z.url().optional(),
   PRODUCT_SERVICE_URL: z.url().optional(),
   ORDER_SERVICE_URL: z.url().optional(),

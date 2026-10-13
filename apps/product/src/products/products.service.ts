@@ -13,6 +13,8 @@ import { Product } from './product.schema';
 
 const MONGO_DUPLICATE_KEY = 11000;
 const OBJECT_ID = /^[a-f\d]{24}$/i;
+const MAX_LIMIT = 50;
+const MAX_IDS = 100;
 
 // Opaque to clients: where the previous page ended (createdAt + _id tie-breaker).
 interface Cursor {
@@ -71,6 +73,8 @@ export class ProductsService {
   }
 
   async list(q: ListProductsQuery) {
+    // gRPC callers skip the HTTP validation pipe, so enforce the cap here too.
+    const limit = Math.min(Math.max(Math.trunc(q.limit) || 20, 1), MAX_LIMIT);
     const filter: QueryFilter<Product> = { isActive: true };
     if (q.category) filter.category = q.category.toLowerCase();
     if (q.minPrice !== undefined || q.maxPrice !== undefined) {
@@ -94,11 +98,11 @@ export class ProductsService {
     const items = await this.model
       .find(filter)
       .sort({ createdAt: -1, _id: -1 })
-      .limit(q.limit + 1) // one extra tells us whether there is a next page
+      .limit(limit + 1) // one extra tells us whether there is a next page
       .lean();
 
-    const hasMore = items.length > q.limit;
-    const page = hasMore ? items.slice(0, q.limit) : items;
+    const hasMore = items.length > limit;
+    const page = hasMore ? items.slice(0, limit) : items;
     const last = page.at(-1);
 
     return {
@@ -111,6 +115,16 @@ export class ProductsService {
             })
           : null,
     };
+  }
+
+  /** Active products among the given ids; unknown or invalid ids are skipped. */
+  async findByIds(ids: string[]) {
+    if (ids.length > MAX_IDS) {
+      throw new BadRequestException(`At most ${MAX_IDS} ids per request`);
+    }
+    const valid = ids.filter((id) => OBJECT_ID.test(id));
+    if (valid.length === 0) return [];
+    return this.model.find({ _id: { $in: valid }, isActive: true }).lean();
   }
 
   async update(id: Types.ObjectId, dto: UpdateProductDto) {

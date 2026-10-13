@@ -13,6 +13,8 @@ export interface BootstrapOptions {
   bodyParser?: boolean;
   /** Service-specific setup (extra middleware etc.), run before listening. */
   configure?: (app: INestApplication) => void;
+  /** Async startup work before the HTTP server listens (e.g. a gRPC server). */
+  beforeListen?: (app: INestApplication) => Promise<void>;
 }
 
 /**
@@ -55,6 +57,7 @@ export async function bootstrapService(
 
   const config = app.get<ConfigService<Env, true>>(ConfigService);
   const port = config.get('PORT', { infer: true });
+  await options.beforeListen?.(app);
   await app.listen(port);
   app
     .get(Logger)
