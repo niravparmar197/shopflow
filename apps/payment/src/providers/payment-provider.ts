@@ -49,6 +49,12 @@ export type WebhookHeaders = Record<string, string | undefined>;
 export interface PaymentProvider {
   readonly name: ProviderName;
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession>;
+  /** Rebuilds the session for an existing provider order (creates nothing). */
+  resumeCheckout(
+    providerOrderId: string,
+    amountPaise: number,
+    currency: string,
+  ): Promise<CheckoutSession>;
   /** Throws InvalidSignatureError if the signature is wrong. */
   parseWebhook(rawBody: Buffer, headers: WebhookHeaders): WebhookResult;
   refund(

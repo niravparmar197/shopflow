@@ -65,6 +65,8 @@
     "kafkajs": "^2.2.4",
     "mongoose": "^9.11.2",
     "nestjs-pino": "^5.3.1",
+    "opossum": "^10.0.0",
+    "p-retry": "^4.6.2",
     "pg": "^8.23.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.2.0",
@@ -93,6 +95,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/opossum": "^8.1.9",
     "@types/supertest": "^7.0.0",
     "babel-plugin-transform-import-meta": "^2.3.3",
     "eslint": "^9.18.0",
@@ -145,7 +148,8 @@
       "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
-      "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
+      "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1",
+      "^@app/resilience(|/.*)$": "<rootDir>/libs/resilience/src/$1"
     },
     "transformIgnorePatterns": [
       "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|terminus|typeorm)/)"

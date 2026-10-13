@@ -5,6 +5,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, Env } from '@app/common';
 import { KafkaModule } from '@app/kafka';
+import { ResilienceModule } from '@app/resilience';
 import { PAYMENT_ENTITIES } from './database/entities';
 import { PaymentsModule } from './payments/payments.module';
 
@@ -32,6 +33,7 @@ import { PaymentsModule } from './payments/payments.module';
         ),
       }),
     }),
+    ResilienceModule, // one circuit breaker per payment provider
     PaymentsModule,
   ],
 })

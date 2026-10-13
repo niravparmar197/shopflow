@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { InvalidSignatureError } from './errors';
 import { hmacSha256Hex, safeEqualHex } from './hmac';
 import type {
@@ -16,6 +17,16 @@ export interface FakeWebhookBody {
 }
 
 /**
+ * Fault injection for resilience tests:
+ *   ok    → works
+ *   fail  → 503 every time (opens the circuit)
+ *   slow  → answers after 5 s (longer than our 2 s timeout)
+ *   flaky → each payment fails twice with a 502, then works (retry wins)
+ */
+export type FakeMode = 'ok' | 'fail' | 'slow' | 'flaky';
+export const FAKE_MODES: readonly FakeMode[] = ['ok', 'fail', 'slow', 'flaky'];
+
+/**
  * For local dev and tests: no keys, no network. Webhooks are signed like the
  * real ones (HMAC-SHA256 of the raw body, in the x-fake-signature header).
  * The factory refuses it in production.
@@ -24,6 +35,9 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly name = 'fake' as const;
   /** Every refund asked for; tests check this. */
   readonly refunds: { providerPaymentId: string; amountPaise: number }[] = [];
+  mode: FakeMode = 'ok';
+  slowMs = 5_000;
+  private readonly flakyCalls = new Map<string, number>();
 
   constructor(private readonly webhookSecret: string) {}
 
@@ -33,12 +47,41 @@ export class FakePaymentProvider implements PaymentProvider {
     return { raw, signature: hmacSha256Hex(secret, raw) };
   }
 
-  createCheckout(i: CreateCheckoutInput): Promise<CheckoutSession> {
-    return Promise.resolve({
+  async createCheckout(i: CreateCheckoutInput): Promise<CheckoutSession> {
+    // ref: false: an abandoned slow call must not keep the process alive.
+    if (this.mode === 'slow') {
+      await sleep(this.slowMs, undefined, { ref: false });
+    }
+    if (this.mode === 'fail') {
+      throw Object.assign(new Error('Fake provider down'), { statusCode: 503 });
+    }
+    if (this.mode === 'flaky') {
+      const n = (this.flakyCalls.get(i.paymentId) ?? 0) + 1;
+      this.flakyCalls.set(i.paymentId, n);
+      if (n <= 2) {
+        throw Object.assign(new Error(`Fake flaky failure #${n}`), {
+          statusCode: 502,
+        });
+      }
+    }
+    return {
       provider: this.name,
       providerOrderId: `fake_${i.paymentId}`,
       amountPaise: i.amountPaise,
       currency: i.currency,
+    };
+  }
+
+  resumeCheckout(
+    providerOrderId: string,
+    amountPaise: number,
+    currency: string,
+  ): Promise<CheckoutSession> {
+    return Promise.resolve({
+      provider: this.name,
+      providerOrderId,
+      amountPaise,
+      currency,
     });
   }
 

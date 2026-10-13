@@ -56,6 +56,21 @@ export class RazorpayAdapter implements PaymentProvider {
     };
   }
 
+  // A Razorpay order is all the frontend needs: no API call.
+  resumeCheckout(
+    providerOrderId: string,
+    amountPaise: number,
+    currency: string,
+  ): Promise<CheckoutSession> {
+    return Promise.resolve({
+      provider: this.name,
+      providerOrderId,
+      publicKey: this.opts.keyId,
+      amountPaise,
+      currency,
+    });
+  }
+
   parseWebhook(raw: Buffer, headers: WebhookHeaders): WebhookResult {
     const signature = headers['x-razorpay-signature'];
     if (

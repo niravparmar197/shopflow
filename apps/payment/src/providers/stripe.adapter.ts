@@ -44,6 +44,23 @@ export class StripeAdapter implements PaymentProvider {
     };
   }
 
+  // We don't store the client_secret, so fetch it again.
+  async resumeCheckout(
+    providerOrderId: string,
+    amountPaise: number,
+    currency: string,
+  ): Promise<CheckoutSession> {
+    const intent = await this.client.paymentIntents.retrieve(providerOrderId);
+    return {
+      provider: this.name,
+      providerOrderId,
+      clientSecret: intent.client_secret ?? undefined,
+      publicKey: this.opts.publishableKey,
+      amountPaise,
+      currency,
+    };
+  }
+
   parseWebhook(raw: Buffer, headers: WebhookHeaders): WebhookResult {
     let event: Stripe.Event;
     try {

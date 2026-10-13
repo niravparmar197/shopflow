@@ -147,9 +147,10 @@ export class GatewayModule implements NestModule {
 
     // 9) Payments: JWT here; the payment service checks it again and only
     //    shows the caller's own payments. (Provider webhooks will need a
-    //    route without JWT; they are signed instead.)
+    //    route without JWT; they are signed instead.) 10 s timeout: checkout
+    //    retries the provider for up to ~6.6 s (3 × 2 s + backoff).
     consumer
-      .apply(jwtMiddleware(this.jwt), proxyTo(paymentService))
+      .apply(jwtMiddleware(this.jwt), proxyTo(paymentService, 10_000))
       .forRoutes('v1/payments{/*path}');
   }
 }
