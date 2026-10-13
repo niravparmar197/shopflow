@@ -61,6 +61,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : ((body as { message?: unknown } | null)?.message ??
           'Something went wrong');
 
+    // An exception can name its own error code ({ code, message }), e.g.
+    // INVALID_ORDER_TRANSITION; otherwise it comes from the status.
+    const customCode = (body as { code?: unknown } | null)?.code;
     const correlationId = correlationIdOf(req);
 
     // Log the real error for 500s, but never send its details to the client.
@@ -70,7 +73,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const isValidation = Array.isArray(message);
     const payload: ErrorResponse = {
-      code: HttpStatus[status] ?? 'ERROR', // e.g. "CONFLICT"
+      code:
+        typeof customCode === 'string'
+          ? customCode
+          : (HttpStatus[status] ?? 'ERROR'), // e.g. "CONFLICT"
       message: isValidation ? 'Validation failed' : String(message),
       details: isValidation ? (message as unknown[]) : undefined,
       correlationId,
