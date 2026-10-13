@@ -19,6 +19,10 @@ export const OrderCreatedV1Schema = z.object({
   items: z.array(OrderItem).min(1),
   totalPaise: z.number().int().nonnegative(),
   currency: z.string().length(3),
+  // Added later. OPTIONAL, so it's still version 1: old events still parse
+  // and old consumers ignore it. (A required, renamed or removed field
+  // would need version 2, with consumers accepting [1, 2] for a while.)
+  customerEmail: z.email().optional(),
 });
 export type OrderCreatedV1 = z.infer<typeof OrderCreatedV1Schema>;
 

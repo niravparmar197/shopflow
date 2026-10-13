@@ -27,6 +27,8 @@ export type BeforeCommit = (m: EntityManager, order: Order) => Promise<void>;
 
 export interface PlaceOrderOptions {
   cid?: string;
+  /** Snapshot of the buyer's email, for notifications. */
+  customerEmail?: string;
   /**
    * Lets the caller save its own rows in the same commit as the order (the
    * idempotency result). Checkout itself knows nothing about idempotency.
@@ -102,7 +104,7 @@ export class CheckoutService {
   private async checkoutLocked(
     userId: string,
     input: PlaceOrderInput,
-    { cid, beforeCommit }: PlaceOrderOptions,
+    { cid, customerEmail, beforeCommit }: PlaceOrderOptions,
   ): Promise<Order> {
     // 1. The cart, from Redis.
     const [items, couponCode] = await Promise.all([
@@ -157,6 +159,7 @@ export class CheckoutService {
           totalPaise,
           couponCode: coupon?.code ?? null,
           currency: 'INR',
+          customerEmail: customerEmail ?? null,
           // Snapshot of name and price as charged.
           items: lines.map((l) =>
             orderItems.create({
@@ -185,6 +188,7 @@ export class CheckoutService {
           })),
           totalPaise,
           currency: 'INR',
+          customerEmail,
         },
       });
       await beforeCommit?.(m, saved);

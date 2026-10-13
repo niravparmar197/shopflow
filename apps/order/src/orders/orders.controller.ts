@@ -55,6 +55,7 @@ export class OrdersController {
     try {
       const order = await this.checkout.placeOrder(user.sub, dto, {
         cid,
+        customerEmail: user.email,
         beforeCommit: (m, saved) =>
           this.idempotency.complete(
             m,

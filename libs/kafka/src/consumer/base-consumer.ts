@@ -1,198 +1,37 @@
-import {
-  Logger,
-  OnApplicationBootstrap,
-  OnModuleDestroy,
-} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type {
-  Consumer,
-  EachMessagePayload,
-  IHeaders,
-  Kafka,
-  KafkaMessage,
-} from 'kafkajs';
-import { setTimeout as sleep } from 'node:timers/promises';
+import type { Kafka } from 'kafkajs';
 import { DataSource, EntityManager } from 'typeorm';
-import type { ZodType } from 'zod';
 import type { Env } from '@app/common';
-import { EnvelopeSchema, type EventEnvelope } from '@app/events';
+import type { EventEnvelope } from '@app/events';
 import { KafkaProducerService } from '../kafka-producer.service';
+import { KafkaConsumerCore } from './kafka-consumer-core';
 import { ProcessedEvent } from './processed-event.entity';
-import { PoisonMessageError } from './poison-message.error';
-
-// Attempt 1 after 1 s, 2 after 5 s, 3 after 15 s, then the dead-letter topic.
-const RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
-const START_RETRY_MS = 5_000;
-const HEARTBEAT_EVERY_MS = 3_000;
-
-function header(headers: IHeaders | undefined, name: string) {
-  const v = headers?.[name];
-  if (v === undefined) return undefined;
-  return (Array.isArray(v) ? v[0] : v)?.toString();
-}
 
 /**
- * Template Method: the steps every consumer takes are fixed here; a subclass
- * only says what to read (topics, groupId), which events it wants and how to
- * validate them (schemas: eventType → zod schema) and what to do (handle).
- * Adding an event = one line in `schemas` and one `case` in handle().
- *
- *   1. decode + validate the envelope and data
- *   2. one transaction: record the event in processed_events (already
- *      there → duplicate, skipped) + handle()
- *   3. commit the Kafka offset, only after step 2 is settled
- *
- * Failures never block the partition:
- *   - poison (bad JSON / schema / version)  → straight to <group>.dlq
- *   - anything else (DB down, deadlock…)    → <group>.retry after 1 s, 5 s,
- *                                             15 s, then <group>.dlq
- *   - Kafka itself down (can't even reroute) → throw: no commit, kafkajs
- *                                             redelivers
- * The cost: a retried event can run after a newer event of the same
- * aggregate. Handlers stay correct because they're idempotent and the
- * aggregates' state machines reject impossible moves.
+ * For services with PostgreSQL: the event id goes into processed_events in
+ * the SAME transaction as handle()'s changes (already there → duplicate,
+ * skipped). Exactly-once effect on top of at-least-once delivery.
+ * The rest of the steps (decode, validate, retry, DLQ, commit) come from
+ * KafkaConsumerCore.
  */
-export abstract class BaseConsumer
-  implements OnApplicationBootstrap, OnModuleDestroy
-{
-  protected readonly logger = new Logger(this.constructor.name);
-  private readonly consumers: Consumer[] = [];
-  private readonly stopping = new AbortController();
-
-  protected abstract readonly topics: readonly string[];
-  protected abstract readonly groupId: string;
-  /** The events this consumer handles (v1 data schemas); others are skipped. */
-  protected abstract readonly schemas: Readonly<Record<string, ZodType>>;
-
+export abstract class BaseConsumer extends KafkaConsumerCore {
   /** Business logic, inside the transaction: write only through `m`.
    *  event.data has already been validated against schemas[event.type]. */
   protected abstract handle(
     m: EntityManager,
-    event: EventEnvelope<unknown>,
+    event: EventEnvelope,
   ): Promise<void>;
 
   constructor(
     protected readonly ds: DataSource,
-    private readonly kafka: Kafka,
-    private readonly producer: KafkaProducerService,
-    private readonly config: ConfigService<Env, true>,
-  ) {}
-
-  protected get retryTopic() {
-    return `${this.groupId}.retry`;
-  }
-
-  protected get dlqTopic() {
-    return `${this.groupId}.dlq`;
-  }
-
-  onApplicationBootstrap() {
-    if (!this.config.get('KAFKA_CONSUMERS_ENABLED', { infer: true })) return;
-    // In the background: the service (HTTP, health) starts even while Kafka
-    // is down, and the consumers join once it's back.
-    void this.start(this.groupId, this.topics, (p) => this.onMain(p));
-    void this.start(`${this.groupId}-retry`, [this.retryTopic], (p) =>
-      this.onRetry(p),
-    );
-  }
-
-  async onModuleDestroy() {
-    this.stopping.abort(); // also ends any wait for a retry's due time
-    await Promise.all(
-      this.consumers.map((c) => c.disconnect().catch(() => undefined)),
-    );
-  }
-
-  private async start(
-    groupId: string,
-    topics: readonly string[],
-    onMessage: (p: EachMessagePayload) => Promise<void>,
+    kafka: Kafka,
+    producer: KafkaProducerService,
+    config: ConfigService<Env, true>,
   ) {
-    while (!this.stopping.signal.aborted) {
-      const consumer = this.kafka.consumer({
-        groupId,
-        sessionTimeout: 30_000,
-        heartbeatInterval: HEARTBEAT_EVERY_MS,
-      });
-      try {
-        await consumer.connect();
-        // Only matters for a new group (no saved offset): don't skip old events.
-        await consumer.subscribe({ topics: [...topics], fromBeginning: true });
-        await consumer.run({
-          autoCommit: false, // committed by hand, once the message is settled
-          partitionsConsumedConcurrently: 3,
-          eachMessage: async (p) => {
-            // If this throws (Kafka down while rerouting), nothing is
-            // committed and kafkajs redelivers.
-            await onMessage(p);
-            await consumer.commitOffsets([
-              {
-                topic: p.topic,
-                partition: p.partition,
-                offset: (BigInt(p.message.offset) + 1n).toString(),
-              },
-            ]);
-          },
-        });
-        this.consumers.push(consumer);
-        this.logger.log(`Consuming ${topics.join(', ')} as group ${groupId}`);
-        return;
-      } catch (err: unknown) {
-        this.logger.error(
-          { err, topics },
-          'Consumer failed to start, retrying',
-        );
-        await consumer.disconnect().catch(() => undefined);
-        await sleep(START_RETRY_MS, undefined, {
-          signal: this.stopping.signal,
-        }).catch(() => undefined);
-      }
-    }
+    super(kafka, producer, config);
   }
 
-  // ---------- main topic ----------
-  private async onMain({ topic, message }: EachMessagePayload) {
-    try {
-      await this.process(message.value);
-    } catch (err) {
-      // The topic it really came from: we may read several.
-      await this.routeFailure(message, toError(err), 0, topic);
-    }
-  }
-
-  // ---------- retry topic ----------
-  private async onRetry(payload: EachMessagePayload) {
-    const { message } = payload;
-    const attempt = Number(header(message.headers, 'x-attempt') ?? 1);
-    const dueAt = Number(header(message.headers, 'x-retry-at') ?? 0);
-    const originalTopic =
-      header(message.headers, 'x-original-topic') ?? this.topics[0];
-
-    // Wait until it's due, heartbeating so the group doesn't drop us.
-    while (Date.now() < dueAt) {
-      await sleep(Math.min(dueAt - Date.now(), HEARTBEAT_EVERY_MS), undefined, {
-        signal: this.stopping.signal,
-      });
-      await payload.heartbeat();
-    }
-
-    try {
-      await this.process(message.value);
-      this.logger.log(`Retry attempt ${attempt} succeeded`);
-    } catch (err) {
-      await this.routeFailure(message, toError(err), attempt, originalTopic);
-    }
-  }
-
-  // ---------- the template: same steps for main and retry ----------
-  private async process(value: Buffer | null) {
-    const event = this.decode(value);
-    // Other event types on these topics aren't for us: just move past them.
-    // (hasOwn: a type like "constructor" must not hit Object.prototype)
-    if (!Object.hasOwn(this.schemas, event.type)) return;
-    const schema = this.schemas[event.type];
-
-    const data = this.parseData(schema, event);
+  protected async processEvent(event: EventEnvelope) {
     await this.ds.transaction(async (m) => {
       const fresh = await m
         .createQueryBuilder()
@@ -206,95 +45,7 @@ export abstract class BaseConsumer
         this.logger.warn(`Duplicate ${event.type} ${event.eventId}, skipped`);
         return;
       }
-      await this.handle(m, { ...event, data });
+      await this.handle(m, event);
     });
   }
-
-  private async routeFailure(
-    msg: KafkaMessage,
-    err: Error,
-    attempt: number,
-    originalTopic: string,
-  ) {
-    const poison = err instanceof PoisonMessageError;
-    const headers: IHeaders = {
-      ...msg.headers,
-      'x-original-topic': originalTopic,
-      'x-error': err.message.slice(0, 500),
-      'x-failed-at': new Date().toISOString(),
-    };
-
-    if (poison || attempt >= RETRY_DELAYS_MS.length) {
-      await this.producer.send(this.dlqTopic, [
-        {
-          key: msg.key,
-          value: msg.value,
-          headers: {
-            ...headers,
-            'x-attempt': String(attempt),
-            // dlq-replay skips poison unless asked: it fails the same way again.
-            'x-dlq-reason': poison ? 'poison' : 'retries-exhausted',
-          },
-        },
-      ]);
-      this.logger.error(
-        `→ DLQ ${this.dlqTopic} (${poison ? 'poison' : `after ${attempt} retries`}): ${err.message}`,
-      );
-      return;
-    }
-
-    const delay = RETRY_DELAYS_MS[attempt];
-    await this.producer.send(this.retryTopic, [
-      {
-        key: msg.key, // same key → same partition in the retry topic
-        value: msg.value,
-        headers: {
-          ...headers,
-          'x-attempt': String(attempt + 1),
-          'x-retry-at': String(Date.now() + delay),
-        },
-      },
-    ]);
-    this.logger.warn(
-      `→ retry ${attempt + 1}/${RETRY_DELAYS_MS.length} in ${delay} ms: ${err.message}`,
-    );
-  }
-
-  private decode(value: Buffer | null): EventEnvelope {
-    if (!value) throw new PoisonMessageError('Empty message');
-    let json: unknown;
-    try {
-      json = JSON.parse(value.toString());
-    } catch {
-      throw new PoisonMessageError('Not valid JSON');
-    }
-    const result = EnvelopeSchema.safeParse(json);
-    if (!result.success) {
-      throw new PoisonMessageError(`Bad envelope: ${result.error.message}`);
-    }
-    return result.data;
-  }
-
-  /** Checks the schema version, then validates the data. */
-  private parseData<T>(
-    schema: ZodType<T>,
-    event: EventEnvelope,
-    versions: number[] = [1],
-  ): T {
-    if (!versions.includes(event.version)) {
-      throw new PoisonMessageError(
-        `Unsupported version ${event.version} of ${event.type}`,
-      );
-    }
-    const result = schema.safeParse(event.data);
-    if (!result.success) {
-      throw new PoisonMessageError(
-        `Invalid ${event.type}: ${result.error.message}`,
-      );
-    }
-    return result.data;
-  }
 }
-
-const toError = (err: unknown) =>
-  err instanceof Error ? err : new Error(String(err));
