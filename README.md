@@ -162,6 +162,43 @@ Client → Gateway (JWT) → Order service ──▶ Redis: cart:{userId} (7-day
 | `DELETE /v1/cart/coupon`              | user  |                                              |
 | `POST /v1/coupons`, `GET /v1/coupons` | admin | create / list coupons                        |
 
+## Orders (F4)
+
+```
+POST /v1/orders ─▶ Redis checkout lock (per user)
+                   ├─ cart (Redis) + live prices (gRPC)       outside the transaction
+                   ├─ BEGIN
+                   │    advisory lock (per user) → coupon rules → used_count + 1 (atomic)
+                   │    order + item snapshots → outbox "order.created" → idempotency result
+                   │  COMMIT
+                   └─ clear the cart
+```
+
+- **State pattern** for order status (`PENDING → CONFIRMED → PAID → SHIPPED → DELIVERED`, plus `CANCELLED` / `FAILED`); any other move is `409 INVALID_ORDER_TRANSITION`
+- **Idempotency-Key** on `POST /v1/orders`: same key + same body replays the saved response (`Idempotent-Replayed: true`); the result is saved in the same transaction as the order, so a crashed request can be taken over safely after 2 min
+- **Transactional outbox**: `order.created` is written in the same commit as the order, ready for the Kafka publisher (F5)
+- Coupon use is one conditional `UPDATE` (no read-then-write race); failures roll back everything, including the coupon use
+- Items keep a snapshot of name and price; later product changes don't alter past orders
+- Tests (`npm run test:e2e:order`): replay, 5 parallel requests with one key, last coupon use raced by 2 users, same user with 2 keys, rollback, product service down, IDOR, cursor pagination
+
+| Endpoint                      | Auth | Notes                                                                                   |
+| ----------------------------- | ---- | --------------------------------------------------------------------------------------- |
+| `POST /v1/orders`             | user | `Idempotency-Key` header (8–100 chars); body `{ expectedTotalPaise? }`; 10/min per user |
+| `GET /v1/orders?limit&cursor` | user | newest first, cursor pagination (max 50)                                                |
+| `GET /v1/orders/:id`          | user | only your own orders, otherwise 404                                                     |
+
+| Error code                                             | HTTP | Meaning                                                                    |
+| ------------------------------------------------------ | ---- | -------------------------------------------------------------------------- |
+| `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID` | 400  | header missing or badly formed                                             |
+| `CART_EMPTY`                                           | 422  | nothing to order                                                           |
+| `CART_ITEM_UNAVAILABLE`                                | 409  | a product was removed or deactivated; `details.productIds`                 |
+| `PRICE_CHANGED`                                        | 409  | `expectedTotalPaise` is out of date; `details.totalPaise` is the new total |
+| `COUPON_NOT_APPLICABLE` / `COUPON_EXHAUSTED`           | 409  | coupon failed a rule / its last use was just taken                         |
+| `IDEMPOTENCY_KEY_REUSED`                               | 422  | same key, different body                                                   |
+| `IDEMPOTENCY_IN_PROGRESS` / `CHECKOUT_IN_PROGRESS`     | 409  | the first request (or another checkout) is still running; retry soon       |
+| `SERVICE_UNAVAILABLE`                                  | 503  | product service down; nothing was saved                                    |
+| `TOO_MANY_REQUESTS`                                    | 429  | more than 10 order requests a minute                                       |
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |
