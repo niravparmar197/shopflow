@@ -50,6 +50,12 @@ jobs:
       - name: Integration tests (order)
         run: npm run test:e2e:order
 
+      # Real PostgreSQL + Kafka: duplicates, flash-sale oversell, deadlock,
+      # poison → DLQ, retry topic. (The order suite above also runs the saga
+      # against a real Kafka.)
+      - name: Integration tests (inventory)
+        run: npm run test:e2e:inventory
+
       - name: Build all services
         run: |
           for app in gateway user product order payment inventory notification; do

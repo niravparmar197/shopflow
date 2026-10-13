@@ -51,7 +51,8 @@ export default async function setup() {
     E2E_JWT_PRIVATE_KEY_PATH: join(keyDir, 'private.pem'),
     // Required by config; the tests replace the product client with a fake.
     PRODUCT_GRPC_URL: '127.0.0.1:1',
-    // No Kafka in these tests: the outbox is checked in the database.
+    // No Kafka by default: the outbox is checked in the database.
+    // startOrderApp({ kafka: true }) switches it on for the saga suite.
     KAFKA_BROKERS: '127.0.0.1:1',
     OUTBOX_RELAY_ENABLED: 'false',
     KAFKA_CONSUMERS_ENABLED: 'false',

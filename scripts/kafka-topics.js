@@ -1,5 +1,5 @@
 // Creates the Kafka topics if they are missing. Safe to run many times.
-// Keep the list in sync with libs/events/src/topics.ts.
+// Keep the list in sync with libs/events/src/topics.ts (ALL_TOPICS).
 //
 //   npm run kafka:topics
 //   KAFKA_BROKERS=b1:9092,b2:9092 KAFKA_RF=3 npm run kafka:topics   (production)

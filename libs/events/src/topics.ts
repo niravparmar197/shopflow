@@ -19,3 +19,12 @@ export function topicForEvent(type: string): string {
   if (!topic) throw new Error(`No Kafka topic for event type "${type}"`);
   return topic;
 }
+
+// Each consumer group also has <group>.retry and <group>.dlq (BaseConsumer).
+export const CONSUMER_GROUPS = ['inventory-svc', 'order-svc'] as const;
+
+/** Every topic the system uses; the tests create these in their Kafka. */
+export const ALL_TOPICS: string[] = [
+  ...Object.values(Topics),
+  ...CONSUMER_GROUPS.flatMap((g) => [`${g}.retry`, `${g}.dlq`]),
+];

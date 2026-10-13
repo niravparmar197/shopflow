@@ -199,6 +199,32 @@ POST /v1/orders ─▶ Redis checkout lock (per user)
 | `SERVICE_UNAVAILABLE`                                  | 503  | product service down; nothing was saved                                    |
 | `TOO_MANY_REQUESTS`                                    | 429  | more than 10 order requests a minute                                       |
 
+## Events (F5)
+
+```
+order.created ─▶ Inventory ─┬─▶ stock.reserved ─▶ Order: PENDING → CONFIRMED (+ order.confirmed)
+                            └─▶ stock.failed   ─▶ Order: PENDING → FAILED    (+ order.failed)
+```
+
+| Topic                           | Key          | Events                                                               |
+| ------------------------------- | ------------ | -------------------------------------------------------------------- |
+| `order-events`                  | orderId      | `order.created`, `order.confirmed`, `order.failed`                   |
+| `inventory-events`              | orderId      | `stock.reserved`, `stock.failed`                                     |
+| `<group>.retry` / `<group>.dlq` | original key | failed messages (headers `x-error`, `x-attempt`, `x-original-topic`) |
+
+- **Outbox relay** (`libs/kafka`): at-least-once delivery from the outbox table to Kafka, keyed by aggregate id so one order's events stay in order
+- **BaseConsumer** (template method): every consumer records the `eventId` in `processed_events` in the **same transaction** as its change, so duplicates have no effect (exactly-once effect)
+- **Reserve stock**: one conditional `UPDATE … WHERE available >= qty` per product (no oversell), rows locked in sorted order (no deadlock), savepoint for all-or-nothing
+- **Failures**: poison (bad JSON / schema / version) → `<group>.dlq` at once; other errors → `<group>.retry` after 1 s, 5 s, 15 s, then the DLQ; the partition never blocks
+- Tests with a real Kafka (`npm run test:e2e:inventory`, and the saga suite in `npm run test:e2e:order`): same event 3×, 100 buyers for 10 items, opposite lock order, poison → DLQ, DB error → retry → success, late events ignored by the state machine
+- Decision record: [ADR 0001 — choreography saga](docs/adr/0001-choreography-saga.md)
+
+### DLQ runbook
+
+1. Kafka UI → topic `<group>.dlq` → read the `x-error` and `x-dlq-reason` headers.
+2. Fix the cause (bug, data, config).
+3. `npm run dlq:replay -- <group>` sends the messages back to their original topic (`--include-poison` once a code fix can handle them).
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |
@@ -217,6 +243,7 @@ POST /v1/orders ─▶ Redis checkout lock (per user)
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
 | `npm run kafka:topics`                                                        | Create the Kafka topics (idempotent; `KAFKA_RF=3` in production)   |
+| `npm run dlq:replay -- <group>`                                               | Send a consumer group's dead letters back to their topic           |
 | `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
