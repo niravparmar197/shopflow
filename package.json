@@ -17,11 +17,12 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/gateway/test/jest-e2e.json",
+    "test:e2e": "npm run test:e2e:user",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate:user": "npm run typeorm -- migration:generate -d apps/user/src/database/data-source.ts",
     "migration:run:user": "npm run typeorm -- migration:run -d apps/user/src/database/data-source.ts",
-    "migration:revert:user": "npm run typeorm -- migration:revert -d apps/user/src/database/data-source.ts"
+    "migration:revert:user": "npm run typeorm -- migration:revert -d apps/user/src/database/data-source.ts",
+    "test:e2e:user": "jest --config apps/user/test/jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -55,6 +56,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@testcontainers/postgresql": "^12.2.0",
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
@@ -86,7 +88,7 @@
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "node_modules.@nestjs.(typeorm|terminus|jwt).+\\.js$": [
+      "node_modules.@nestjs.(config|jwt|terminus|typeorm).+\\.js$": [
         "babel-jest",
         {
           "plugins": [
@@ -114,7 +116,10 @@
       "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!@nestjs/(typeorm|terminus|jwt)/)"
+      "node_modules/(?!@nestjs/(config|jwt|terminus|typeorm)/)"
     ]
+  },
+  "engines": {
+    "node": ">=22.12"
   }
 }

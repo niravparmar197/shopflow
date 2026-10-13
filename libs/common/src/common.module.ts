@@ -28,12 +28,16 @@ export class CommonModule {
         LoggerModule.forRootAsync({
           inject: [ConfigService],
           useFactory: (config: ConfigService<Env, true>) => {
-            const isDev =
-              config.get('NODE_ENV', { infer: true }) === 'development';
+            const env = config.get('NODE_ENV', { infer: true });
+            const isDev = env === 'development';
             return {
               pinoHttp: {
                 name: config.get('SERVICE_NAME', { infer: true }),
-                level: config.get('LOG_LEVEL', { infer: true }),
+                // Keep test output readable; errors still fail the test.
+                level:
+                  env === 'test'
+                    ? 'silent'
+                    : config.get('LOG_LEVEL', { infer: true }),
                 // Reuse the caller's correlation id, or start a new one. It is
                 // written back onto the request so proxies forward it, and
                 // echoed to the client so they can quote it in bug reports.

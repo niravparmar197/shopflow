@@ -15,15 +15,15 @@ export interface BootstrapOptions {
   configure?: (app: INestApplication) => void;
 }
 
-export async function bootstrapService(
-  rootModule: Type<unknown>,
-  { globalPrefix, bodyParser = true, configure }: BootstrapOptions = {},
+/**
+ * Everything a service needs on top of its module: security headers, route
+ * prefix, validation, error format. Integration tests call this too, so they
+ * exercise exactly what runs in production.
+ */
+export function configureApp(
+  app: INestApplication,
+  { globalPrefix, configure }: BootstrapOptions = {},
 ) {
-  const app = await NestFactory.create(rootModule, {
-    bufferLogs: true,
-    bodyParser,
-  });
-  app.useLogger(app.get(Logger));
   app.use(helmet());
   if (globalPrefix) {
     app.setGlobalPrefix(globalPrefix, {
@@ -38,8 +38,20 @@ export async function bootstrapService(
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.enableShutdownHooks();
   configure?.(app);
+}
+
+export async function bootstrapService(
+  rootModule: Type<unknown>,
+  options: BootstrapOptions = {},
+) {
+  const app = await NestFactory.create(rootModule, {
+    bufferLogs: true,
+    bodyParser: options.bodyParser ?? true,
+  });
+  app.useLogger(app.get(Logger));
+  configureApp(app, options);
+  app.enableShutdownHooks();
 
   const config = app.get<ConfigService<Env, true>>(ConfigService);
   const port = config.get('PORT', { infer: true });

@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install
@@ -30,6 +30,10 @@ jobs:
 
       - name: Unit tests
         run: npm test -- --passWithNoTests
+
+      # Starts a real PostgreSQL with Testcontainers (Docker is preinstalled).
+      - name: Integration tests (user)
+        run: npm run test:e2e:user
 
       - name: Build all services
         run: |
