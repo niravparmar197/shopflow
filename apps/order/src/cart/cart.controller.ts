@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Headers,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -12,6 +13,7 @@ import {
 import { CurrentUser, JwtAuthGuard, type JwtPayload } from '@app/common';
 import { CartService } from './cart.service';
 import { AddItemDto } from './dto/add-item.dto';
+import { ApplyCouponDto } from './dto/apply-coupon.dto';
 import { UpdateQtyDto } from './dto/update-qty.dto';
 
 // The gateway already checked the token; checking again here means a request
@@ -56,5 +58,23 @@ export class CartController {
     @Headers('x-correlation-id') cid?: string,
   ) {
     return this.cart.removeItem(user.sub, productId, cid);
+  }
+
+  @Post('coupon')
+  @HttpCode(200)
+  applyCoupon(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ApplyCouponDto,
+    @Headers('x-correlation-id') cid?: string,
+  ) {
+    return this.cart.applyCoupon(user.sub, dto.code, cid);
+  }
+
+  @Delete('coupon')
+  removeCoupon(
+    @CurrentUser() user: JwtPayload,
+    @Headers('x-correlation-id') cid?: string,
+  ) {
+    return this.cart.removeCoupon(user.sub, cid);
   }
 }

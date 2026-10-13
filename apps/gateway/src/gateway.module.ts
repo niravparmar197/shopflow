@@ -99,10 +99,11 @@ export class GatewayModule implements NestModule {
       { path: 'v1/products/:id/images/confirm', method: RequestMethod.POST },
     );
 
-    // 6) Cart: JWT here, then proxy. The order service checks it again and
-    //    takes the user id only from the token.
+    // 6) Cart and coupons: JWT here, then proxy. The order service checks it
+    //    again, takes the user id only from the token, and checks the admin
+    //    role for coupon management.
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
-      .forRoutes('v1/cart{/*path}');
+      .forRoutes('v1/cart{/*path}', 'v1/coupons{/*path}');
   }
 }

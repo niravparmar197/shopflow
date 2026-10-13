@@ -6,23 +6,31 @@ import {
 } from '@nestjs/common';
 import type { Product } from '@app/proto';
 import { CatalogClient } from '../catalog/catalog.client';
+import { CouponResult, CouponsService } from '../coupons/coupons.service';
 import { CartRepository, MAX_ITEMS } from './cart.repository';
 
 export interface CartLine {
   productId: string;
   qty: number;
   name?: string;
+  category?: string;
   unitPricePaise?: number;
   lineTotalPaise?: number;
   /** false when the product was removed or deactivated since it was added. */
   available: boolean;
 }
 
-export interface CartView {
+interface PricedCart {
   items: CartLine[];
   itemCount: number;
   subtotalPaise: number | null; // null when prices could not be loaded
   pricingAvailable: boolean;
+}
+
+export interface CartView extends PricedCart {
+  coupon: CouponResult | null;
+  discountPaise: number;
+  totalPaise: number | null;
 }
 
 // The cart stores only productId → qty. Prices always come live from the
@@ -32,6 +40,7 @@ export class CartService {
   constructor(
     private readonly repo: CartRepository,
     private readonly catalog: CatalogClient,
+    private readonly coupons: CouponsService,
   ) {}
 
   async addItem(userId: string, productId: string, qty: number, cid?: string) {
@@ -65,7 +74,67 @@ export class CartService {
     return this.getCart(userId, cid);
   }
 
+  async applyCoupon(userId: string, code: string, cid?: string) {
+    const cart = await this.getPricedCart(userId, cid);
+    if (cart.subtotalPaise === null) {
+      throw new ServiceUnavailableException('Cannot apply a coupon right now');
+    }
+    const { code: normalised } = await this.coupons.assertApplicable(
+      code,
+      userId,
+      cart.items,
+      cart.subtotalPaise,
+    );
+    await this.repo.setCoupon(userId, normalised);
+    return this.getCart(userId, cid);
+  }
+
+  async removeCoupon(userId: string, cid?: string) {
+    await this.repo.setCoupon(userId, null);
+    return this.getCart(userId, cid);
+  }
+
+  /** Items with live prices, plus the applied coupon and the totals. */
   async getCart(userId: string, cid?: string): Promise<CartView> {
+    const [cart, code] = await Promise.all([
+      this.getPricedCart(userId, cid),
+      this.repo.getCoupon(userId),
+    ]);
+
+    // The coupon is re-checked on every read: the cart may have changed
+    // since it was applied. If it no longer qualifies, the cart still loads
+    // and says why.
+    let coupon: CouponResult | null = null;
+    if (code && cart.subtotalPaise === null) {
+      coupon = {
+        code,
+        applied: false,
+        discountPaise: 0,
+        reason: 'Prices are unavailable right now',
+      };
+    } else if (code && cart.subtotalPaise !== null) {
+      coupon = await this.coupons.evaluate(
+        code,
+        userId,
+        cart.items,
+        cart.subtotalPaise,
+      );
+    }
+    const discountPaise = coupon?.applied ? coupon.discountPaise : 0;
+
+    return {
+      ...cart,
+      coupon,
+      discountPaise,
+      totalPaise:
+        cart.subtotalPaise === null ? null : cart.subtotalPaise - discountPaise,
+    };
+  }
+
+  private async getPricedCart(
+    userId: string,
+    cid?: string,
+  ): Promise<PricedCart> {
     const items = await this.repo.getItems(userId);
     const ids = Object.keys(items);
 
@@ -86,6 +155,7 @@ export class CartService {
         productId: id,
         qty,
         name: p.name,
+        category: p.category,
         unitPricePaise: p.pricePaise,
         lineTotalPaise: p.pricePaise * qty,
         available: true,
