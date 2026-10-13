@@ -14,6 +14,7 @@ import {
   type CommandHandler,
 } from '../handlers/command-handler';
 import { NotificationLog } from '../logs/notification-log.schema';
+import { notificationsSent } from '../metrics';
 
 type JobData = Record<string, unknown> & {
   // Missing on jobs queued before the log travelled with the job.
@@ -108,6 +109,10 @@ export class NotificationsProcessor extends WorkerHost {
         $unset: { lastError: 1 },
       },
     );
+    notificationsSent.inc({
+      template: log?.template ?? current?.template ?? 'unknown',
+      status: 'sent',
+    });
     this.logger.log(`Sent ${job.name} ${key} → ${current?.to ?? '?'}`);
   }
 
@@ -130,6 +135,10 @@ export class NotificationsProcessor extends WorkerHost {
     );
 
     if (final) {
+      notificationsSent.inc({
+        template: job.data.log?.template ?? 'unknown',
+        status: 'failed',
+      });
       this.logger.error(
         `FAILED ${job.id} after ${job.attemptsMade} attempt(s): ${err.message}`,
       );

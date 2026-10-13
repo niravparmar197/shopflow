@@ -2,6 +2,7 @@ import { INestApplication, Type, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
+import { httpMetricsMiddleware, initMetrics } from '@app/observability';
 import { Logger } from 'nestjs-pino';
 import { Env } from './config/env.schema';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
@@ -28,10 +29,17 @@ export function configureApp(
   app: INestApplication,
   { globalPrefix, configure }: BootstrapOptions = {},
 ) {
+  // Metrics: every metric labelled with this service; RED per route.
+  initMetrics(
+    app.get<ConfigService<Env, true>>(ConfigService).get('SERVICE_NAME', {
+      infer: true,
+    }),
+  );
+  app.use(httpMetricsMiddleware);
   app.use(helmet());
   if (globalPrefix) {
     app.setGlobalPrefix(globalPrefix, {
-      exclude: ['health/live', 'health/ready'],
+      exclude: ['health/live', 'health/ready', 'metrics'],
     });
   }
   app.useGlobalPipes(

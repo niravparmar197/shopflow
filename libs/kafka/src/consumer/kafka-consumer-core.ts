@@ -16,7 +16,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { ZodType } from 'zod';
 import type { Env } from '@app/common';
 import { EnvelopeSchema, type EventEnvelope } from '@app/events';
-import { inSpan, restoreTraceContext } from '@app/observability';
+import {
+  inSpan,
+  kafkaProcessed,
+  kafkaProcessSeconds,
+  restoreTraceContext,
+} from '@app/observability';
 import { KafkaProducerService } from '../kafka-producer.service';
 import { PoisonMessageError } from './poison-message.error';
 
@@ -74,7 +79,10 @@ export abstract class KafkaConsumerCore
   protected readonly fromBeginning: boolean = true;
 
   /** The step each subclass fills in. event.data is already validated. */
-  protected abstract processEvent(event: EventEnvelope): Promise<void>;
+  /** 'duplicate' when it was already handled (counted as such). */
+  protected abstract processEvent(
+    event: EventEnvelope,
+  ): Promise<void | 'duplicate'>;
 
   constructor(
     private readonly kafka: Kafka,
@@ -232,7 +240,17 @@ export abstract class KafkaConsumerCore
       async () => {
         const data = this.parseData(schema, event);
         // pg / Redis / Mongo spans nest under this one.
-        await this.processEvent({ ...event, data });
+        const stop = kafkaProcessSeconds.startTimer({
+          group: this.groupId,
+          event_type: event.type,
+        });
+        const outcome = await this.processEvent({ ...event, data });
+        stop();
+        kafkaProcessed.inc({
+          group: this.groupId,
+          event_type: event.type,
+          result: outcome ?? 'ok',
+        });
       },
     );
   }
@@ -251,7 +269,13 @@ export abstract class KafkaConsumerCore
       'x-failed-at': new Date().toISOString(),
     };
 
+    const eventType = header(msg.headers, 'event-type') ?? 'unknown';
     if (poison || attempt >= RETRY_DELAYS_MS.length) {
+      kafkaProcessed.inc({
+        group: this.groupId,
+        event_type: eventType,
+        result: 'dlq',
+      });
       await this.producer.send(this.dlqTopic, [
         {
           key: msg.key,
@@ -270,6 +294,11 @@ export abstract class KafkaConsumerCore
       return;
     }
 
+    kafkaProcessed.inc({
+      group: this.groupId,
+      event_type: eventType,
+      result: 'retry',
+    });
     const delay = RETRY_DELAYS_MS[attempt];
     await this.producer.send(this.retryTopic, [
       {

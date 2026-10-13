@@ -4,6 +4,7 @@ import { PaymentEvents, type PaymentRefundedV1 } from '@app/events';
 import { OutboxService } from '@app/kafka';
 import { ResilienceRegistry } from '@app/resilience';
 import { PaymentProviderFactory } from '../providers/provider.factory';
+import { payments } from '../metrics';
 import { Payment } from './payment.entity';
 import { PaymentStatus } from './payment-status';
 
@@ -109,6 +110,7 @@ export class RefundService {
         },
       });
     });
+    payments.inc({ outcome: 'refunded' });
     this.logger.warn(`Refunded payment ${p.id} (${p.amountPaise} paise)`);
   }
 }

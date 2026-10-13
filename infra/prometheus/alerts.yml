@@ -1,0 +1,59 @@
+# Early warnings for the SLOs (README "Observability"). `for:` = how long it
+# must stay true before it fires, so one slow scrape doesn't page anyone.
+groups:
+  - name: shopflow
+    rules:
+      - alert: ServiceDown
+        expr: up{job="shopflow"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "{{ $labels.instance }} is down" }
+
+      - alert: HighErrorRate # 5xx > 1 %
+        expr: |
+          sum by (service) (rate(http_server_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / sum by (service) (rate(http_server_request_duration_seconds_count[5m])) > 0.01
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "{{ $labels.service }}: {{ $value | humanizePercentage }} of requests fail" }
+
+      - alert: HighLatencyP95 # p95 > 800 ms
+        expr: |
+          histogram_quantile(0.95, sum by (le, service) (rate(http_server_request_duration_seconds_bucket[5m]))) > 0.8
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "{{ $labels.service }} p95 = {{ $value | humanizeDuration }}" }
+
+      - alert: DeadLetterQueueNotEmpty
+        expr: sum by (service, group, event_type) (increase(kafka_messages_processed_total{result="dlq"}[10m])) > 0
+        labels: { severity: warning }
+        annotations: { summary: "{{ $labels.group }} sent {{ $value }} {{ $labels.event_type }} message(s) to the DLQ" }
+
+      - alert: ConsumerLagHigh
+        expr: sum by (consumergroup) (kafka_consumergroup_lag) > 1000
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "{{ $labels.consumergroup }} is {{ $value }} messages behind" }
+
+      - alert: OutboxStuck
+        expr: outbox_oldest_pending_age_seconds > 60
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "{{ $labels.service }}: events not reaching Kafka for {{ $value | humanizeDuration }}" }
+
+      - alert: PaymentCircuitOpen
+        expr: circuit_state{dependency=~"payment-provider:.*"} == 2
+        for: 1m
+        labels: { severity: warning }
+        annotations: { summary: "Circuit OPEN for {{ $labels.dependency }}" }
+
+      - alert: PaidWithoutReservation # the F8 invariant
+        expr: increase(shopflow_paid_without_reservation_total[15m]) > 0
+        labels: { severity: critical }
+        annotations: { summary: "An order was PAID without a stock reservation: check stock by hand" }
+
+      - alert: EventLoopBlocked
+        expr: nodejs_eventloop_lag_p99_seconds > 0.2
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "{{ $labels.service }} event loop p99 lag {{ $value }}s" }

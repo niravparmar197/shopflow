@@ -17,7 +17,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { DataSource } from 'typeorm';
 import { topicForEvent } from '@app/events';
 import type { Env } from '@app/common';
-import { restoreTraceContext, tracer } from '@app/observability';
+import {
+  outboxPublished,
+  restoreTraceContext,
+  scrapeGauge,
+  tracer,
+} from '@app/observability';
 import { KafkaProducerService } from '../kafka-producer.service';
 import { OutboxEvent } from './outbox-event.entity';
 
@@ -49,6 +54,33 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
     this.enabled = config.get('OUTBOX_RELAY_ENABLED', { infer: true });
     this.intervalMs = config.get('OUTBOX_POLL_MS', { infer: true });
     this.batchSize = config.get('OUTBOX_BATCH', { infer: true });
+
+    // Computed when Prometheus scrapes. AGE, not just count: 500 events
+    // pending for 0.2 s is a busy, healthy system; 3 events pending for 5
+    // minutes means Kafka is down or the relay is stuck.
+    scrapeGauge(
+      'outbox_pending_events',
+      'Events waiting in the outbox',
+      [],
+      async (g) => {
+        const [r] = await this.ds.query<{ n: number }[]>(
+          'SELECT count(*)::int AS n FROM outbox WHERE published_at IS NULL',
+        );
+        g.set(r.n);
+      },
+    );
+    scrapeGauge(
+      'outbox_oldest_pending_age_seconds',
+      'Age of the oldest unpublished event',
+      [],
+      async (g) => {
+        const [r] = await this.ds.query<{ age: string }[]>(
+          `SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0) AS age
+             FROM outbox WHERE published_at IS NULL`,
+        );
+        g.set(Number(r.age));
+      },
+    );
   }
 
   onApplicationBootstrap() {
@@ -162,6 +194,7 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
         .whereInIds(rows.map((r) => r.id))
         .execute();
 
+      rows.forEach((r) => outboxPublished.inc({ event_type: r.eventType }));
       this.logger.log(`Published ${rows.length} event(s)`);
       return rows.length;
     });

@@ -8,6 +8,7 @@ import {
 import { DataSource } from 'typeorm';
 import { PaymentEvents, type PaymentSucceededV1 } from '@app/events';
 import { OutboxService } from '@app/kafka';
+import { payments, webhooks } from '../metrics';
 import { Payment } from '../payments/payment.entity';
 import { assertTransition, PaymentStatus } from '../payments/payment-status';
 import { RefundService } from '../payments/refund.service';
@@ -62,24 +63,27 @@ export class WebhookService {
       result = provider.parseWebhook(raw, headers);
     } catch (err) {
       if (err instanceof InvalidSignatureError) {
+        webhooks.inc({ provider: provider.name, outcome: 'invalid_signature' });
         this.logger.warn(`Rejected ${providerName} webhook: bad signature`);
         throw new UnauthorizedException({
           code: 'INVALID_SIGNATURE',
           message: 'Invalid signature',
         });
       }
+      webhooks.inc({ provider: provider.name, outcome: 'invalid' });
       throw new BadRequestException({
         code: 'INVALID_WEBHOOK',
         message: 'Cannot parse webhook',
       });
     }
     if (result.kind === 'IGNORED') {
+      webhooks.inc({ provider: provider.name, outcome: 'ignored' });
       return { received: true, outcome: 'ignored' };
     }
 
     // 2. Dedupe + lock + state change: ONE transaction.
-    const outcome = await this.ds.transaction(
-      async (m): Promise<WebhookOutcome> => {
+    const outcome = await this.ds
+      .transaction(async (m): Promise<WebhookOutcome> => {
         const fresh = await m.query<{ event_id: string }[]>(
           `INSERT INTO webhook_events (provider, event_id, kind) VALUES ($1, $2, $3)
            ON CONFLICT DO NOTHING RETURNING event_id`,
@@ -150,8 +154,14 @@ export class WebhookService {
           default:
             return 'ignored'; // REFUND_PENDING / REFUNDED: already handled
         }
-      },
-    );
+      })
+      .catch((err: unknown) => {
+        webhooks.inc({ provider: provider.name, outcome: 'error' }); // e.g. 503 not found yet
+        throw err;
+      });
+    // After the commit.
+    webhooks.inc({ provider: provider.name, outcome });
+    if (outcome === 'succeeded') payments.inc({ outcome: 'succeeded' });
 
     // 3. Fast path for the refund, after the commit. If it fails, the
     //    sweeper retries it.

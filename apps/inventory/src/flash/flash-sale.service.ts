@@ -8,6 +8,7 @@ import {
 import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 import { REDIS } from '@app/common';
+import { flashGate } from '../metrics';
 
 export type AcquireResult =
   'OK' | 'NOT_FLASH' | 'SOLD_OUT' | 'ALREADY_BOUGHT' | 'LIMIT';
@@ -168,6 +169,7 @@ export class FlashSaleService {
       userId,
       String(quantity),
     )) as [AcquireResult, number];
+    flashGate.inc({ result });
     return { result, left };
   }
 
