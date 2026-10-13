@@ -8,21 +8,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
-import { ClientsModule, Transport } from '@nestjs/microservices';
 import type Redis from 'ioredis';
 import { CommonModule, Env, REDIS, RedisModule } from '@app/common';
-import {
-  grpcLoaderOptions,
-  PRODUCT_PACKAGE_NAME,
-  PRODUCT_PROTO_PATH,
-} from '@app/proto';
+import { ProductClientModule } from '@app/proto';
 import { jwtMiddleware } from './http/jwt.middleware';
 import { proxyTo } from './http/proxy';
 import { createRateLimiter } from './http/rate-limit';
-import {
-  PRODUCT_CLIENT,
-  ProductsController,
-} from './products/products.controller';
+import { ProductsController } from './products/products.controller';
 
 @Module({
   imports: [
@@ -38,26 +30,7 @@ import {
       }),
     }),
     // gRPC client for the product service (public reads).
-    ClientsModule.registerAsync([
-      {
-        name: PRODUCT_CLIENT,
-        inject: [ConfigService],
-        useFactory: (config: ConfigService<Env, true>) => {
-          const url: string = config.getOrThrow('PRODUCT_GRPC_URL', {
-            infer: true,
-          });
-          return {
-            transport: Transport.GRPC,
-            options: {
-              package: PRODUCT_PACKAGE_NAME,
-              protoPath: PRODUCT_PROTO_PATH,
-              url,
-              loader: grpcLoaderOptions,
-            },
-          };
-        },
-      },
-    ]),
+    ProductClientModule,
   ],
   controllers: [ProductsController],
 })
@@ -75,6 +48,9 @@ export class GatewayModule implements NestModule {
       infer: true,
     });
     const productService = this.config.getOrThrow('PRODUCT_SERVICE_URL', {
+      infer: true,
+    });
+    const orderService = this.config.getOrThrow('ORDER_SERVICE_URL', {
       infer: true,
     });
 
@@ -122,5 +98,11 @@ export class GatewayModule implements NestModule {
       },
       { path: 'v1/products/:id/images/confirm', method: RequestMethod.POST },
     );
+
+    // 6) Cart: JWT here, then proxy. The order service checks it again and
+    //    takes the user id only from the token.
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
+      .forRoutes('v1/cart{/*path}');
   }
 }

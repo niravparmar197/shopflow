@@ -12,6 +12,7 @@ import { Metadata } from '@grpc/grpc-js';
 import type { Request } from 'express';
 import { firstValueFrom, Observable, timeout } from 'rxjs';
 import {
+  PRODUCT_CLIENT,
   PRODUCT_SERVICE_NAME,
   Product,
   ProductServiceClient,
@@ -19,7 +20,6 @@ import {
 import { toHttpError } from '../grpc/grpc-errors';
 import { ListProductsQuery } from './list-products.query';
 
-export const PRODUCT_CLIENT = Symbol('PRODUCT_CLIENT');
 const DEADLINE_MS = 2000;
 
 // Public JSON shape: attributes as an object, not the wire format's string.
