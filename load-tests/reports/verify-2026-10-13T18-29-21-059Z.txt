@@ -1,0 +1,6 @@
+buyers in this run:          1000
+orders by status:            {"CONFIRMED":10,"FAILED":28}
+reservations by status:      {"RESERVED":10}
+stock (available|reserved):  0|10
+stock rows below zero:       0
+PASS: exactly 10 confirmed, the rest failed, no negative stock

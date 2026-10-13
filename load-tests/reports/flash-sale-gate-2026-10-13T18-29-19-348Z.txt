@@ -1,0 +1,26 @@
+     ✓ cart filled
+     ✓ buy answered (201/409/429)
+     ✓ no 5xx, no dropped connection
+
+   ✗ buy_latency....................: avg=6.38s    min=2.82s    med=6.29s    max=8.38s   p(90)=8.18s    p(95)=8.27s 
+   ✓ cart_failed....................: 0       0/s
+     checks.........................: 100.00% ✓ 3000      ✗ 0     
+     data_received..................: 2.9 MB  89 kB/s
+     data_sent......................: 1.6 MB  51 kB/s
+     http_req_blocked...............: avg=1.72ms   min=0s       med=510.05µs max=40.03ms p(90)=4.25ms   p(95)=7.55ms
+     http_req_connecting............: avg=1.47ms   min=0s       med=0s       max=40.03ms p(90)=3.19ms   p(95)=6.08ms
+     http_req_duration..............: avg=3.42s    min=122.39ms med=1.83s    max=8.38s   p(90)=8.07s    p(95)=8.18s 
+       { expected_response:true }...: avg=3.42s    min=122.39ms med=1.83s    max=8.38s   p(90)=8.07s    p(95)=8.18s 
+   ✓ http_req_failed................: 0.00%   ✓ 0         ✗ 2000  
+     http_req_receiving.............: avg=446.83µs min=0s       med=0s       max=42.67ms p(90)=1.08ms   p(95)=1.75ms
+     http_req_sending...............: avg=194.86µs min=0s       med=0s       max=12.31ms p(90)=594.72µs p(95)=1.01ms
+     http_req_tls_handshaking.......: avg=0s       min=0s       med=0s       max=0s      p(90)=0s       p(95)=0s    
+     http_req_waiting...............: avg=3.42s    min=121.88ms med=1.83s    max=8.38s   p(90)=8.07s    p(95)=8.18s 
+     http_reqs......................: 2000    62.341526/s
+     iteration_duration.............: avg=3.42s    min=122.39ms med=1.84s    max=8.39s   p(90)=8.07s    p(95)=8.18s 
+     iterations.....................: 2000    62.341526/s
+   ✗ orders_created.................: 38      1.184489/s
+   ✓ server_errors..................: 0       0/s
+     sold_out.......................: 962     29.986274/s
+     vus............................: 200     min=0       max=873 
+     vus_max........................: 1050    min=1050    max=1050

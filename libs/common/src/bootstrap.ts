@@ -61,7 +61,13 @@ export async function bootstrapService(
   const config = app.get<ConfigService<Env, true>>(ConfigService);
   const port = config.get('PORT', { infer: true });
   await options.beforeListen?.(app);
-  await app.listen(port);
+  // Nest passes extra arguments on to Node's server.listen(), where a number
+  // after the port is the backlog; Nest's typings just don't list it.
+  const listen = app.listen.bind(app) as (
+    port: number,
+    backlog: number,
+  ) => Promise<unknown>;
+  await listen(port, config.get('HTTP_LISTEN_BACKLOG', { infer: true }));
   app
     .get(Logger)
     .log(

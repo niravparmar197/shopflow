@@ -120,20 +120,22 @@ export class CheckoutService {
       });
     }
 
-    // 2. Live prices. No fallback: we never sell at a stale price, so if the
-    //    product service is down this fails with 503 (the cart view, in
-    //    contrast, degrades).
-    const lines = await this.priceLines(items, cid);
-    const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
+    // 2. Flash-sale gate FIRST (≈1 ms in Redis): a token per item on sale
+    //    right now, or a fast no (SOLD_OUT…). The cheapest "no" goes first,
+    //    so during a sale the losers never cost a pricing call or a
+    //    transaction (thundering herd).
+    const taken = await this.acquireFlashTokens(userId, items);
 
-    // 3. Flash-sale gate, for items on sale right now: a token per item
-    //    from inventory, or a fast no (SOLD_OUT…) before any order exists.
-    const taken = await this.acquireFlashTokens(userId, lines);
-
-    // 4. One short transaction. Throwing anywhere inside rolls back all of
-    //    it, including the coupon use.
     let order: Order;
     try {
+      // 3. Live prices. No fallback: we never sell at a stale price, so if
+      //    the product service is down this fails with 503 (the cart view,
+      //    in contrast, degrades).
+      const lines = await this.priceLines(items, cid);
+      const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
+
+      // 4. One short transaction. Throwing anywhere inside rolls back all
+      //    of it, including the coupon use.
       order = await this.dataSource.transaction(async (m) => {
         // Database-level guard for the coupon rules ("first order only"),
         // which doesn't depend on Redis. Released on COMMIT or ROLLBACK.
@@ -209,8 +211,8 @@ export class CheckoutService {
         return saved;
       });
     } catch (err) {
-      // No order (PRICE_CHANGED, coupon used up, DB error…): the tokens go
-      // back on sale.
+      // No order (product service down, PRICE_CHANGED, coupon used up, DB
+      // error…): the tokens go back on sale.
       await this.releaseFlashTokens(userId, taken);
       throw err;
     }
@@ -226,13 +228,17 @@ export class CheckoutService {
   }
 
   /** Tokens for the cart's flash-sale items; all or none. */
-  private async acquireFlashTokens(userId: string, lines: PricedLine[]) {
+  private async acquireFlashTokens(
+    userId: string,
+    items: Record<string, number>,
+  ) {
     const onSale = await this.flash.activeIds();
     const taken: { productId: string; qty: number }[] = [];
     try {
-      for (const l of lines.filter((x) => onSale.has(x.productId))) {
-        if (await this.flash.acquire(l.productId, userId, l.qty)) {
-          taken.push({ productId: l.productId, qty: l.qty });
+      for (const [productId, qty] of Object.entries(items)) {
+        if (!onSale.has(productId)) continue;
+        if (await this.flash.acquire(productId, userId, qty)) {
+          taken.push({ productId, qty });
         }
       }
     } catch (err) {

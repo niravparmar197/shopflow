@@ -99,12 +99,13 @@ export class GatewayModule implements NestModule {
       method: RequestMethod.POST,
     };
 
-    // 1) Global limit for everything except health probes and webhooks.
+    // 1) Global limit per IP for everything except health probes and
+    //    webhooks (100/min unless RATE_LIMIT_GLOBAL_PER_MIN says otherwise).
     consumer
       .apply(
         createRateLimiter(this.redis, {
           prefix: 'rl:global',
-          points: 100,
+          points: this.config.get('RATE_LIMIT_GLOBAL_PER_MIN', { infer: true }),
           durationSec: 60,
           message: 'Too many requests',
         }),

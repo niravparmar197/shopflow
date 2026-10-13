@@ -12,6 +12,9 @@ export const envSchema = z.object({
     .default('development'),
   SERVICE_NAME: z.string().min(1),
   PORT: z.coerce.number().int().positive(),
+  // Pending connections the OS queues before refusing more (Node's default
+  // is 511). A burst of new connections bigger than this is refused.
+  HTTP_LISTEN_BACKLOG: z.coerce.number().int().positive().default(511),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
     .default('info'),
@@ -104,6 +107,11 @@ export const envSchema = z.object({
   INVENTORY_SERVICE_URL: z.url().optional(),
   PAYMENT_SERVICE_URL: z.url().optional(),
   NOTIFICATION_SERVICE_URL: z.url().optional(),
+
+  // Gateway: requests per minute per client IP. Raise it ONLY for a local
+  // load test (k6 sends 1,000 users from one IP); never trust a client's
+  // X-Forwarded-For to get around it.
+  RATE_LIMIT_GLOBAL_PER_MIN: z.coerce.number().int().positive().default(100),
 
   // Comma-separated browser origins allowed to call the API with cookies.
   CORS_ORIGINS: z.string().optional(),
