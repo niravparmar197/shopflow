@@ -4,6 +4,8 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { DataSource, EntityManager } from 'typeorm';
 import { CartRepository } from '../cart/cart.repository';
 import type { CartLine } from '../cart/cart.service';
@@ -31,6 +33,12 @@ export interface PlaceOrderOptions {
   beforeCommit?: BeforeCommit;
 }
 
+// The checkout lock outlives any normal checkout (gRPC 1 s + a short
+// transaction); the TTL only matters if the process dies holding it.
+const LOCK_TTL_MS = 15_000;
+const LOCK_WAIT_MS = 5_000;
+const LOCK_POLL_MS = 50;
+
 type PricedLine = Required<Omit<CartLine, 'available'>> & { available: true };
 
 /**
@@ -53,10 +61,47 @@ export class CheckoutService {
     private readonly outbox: OutboxService,
   ) {}
 
+  /**
+   * One checkout per user at a time, from reading the cart until it is
+   * cleared. Without this, a second checkout (another tab, another
+   * Idempotency-Key) that read the cart before the first one cleared it
+   * would order the same cart again. A second checkout waits its turn and
+   * then sees the cart as the first one left it (usually empty).
+   */
   async placeOrder(
     userId: string,
     input: PlaceOrderInput,
-    { cid, beforeCommit }: PlaceOrderOptions = {},
+    options: PlaceOrderOptions = {},
+  ): Promise<Order> {
+    const token = randomUUID();
+    const deadline = Date.now() + LOCK_WAIT_MS;
+    while (!(await this.cart.tryLockCheckout(userId, token, LOCK_TTL_MS))) {
+      if (Date.now() > deadline) {
+        throw new ConflictException({
+          code: 'CHECKOUT_IN_PROGRESS',
+          message: 'Another checkout is in progress. Try again in a moment.',
+        });
+      }
+      await sleep(LOCK_POLL_MS);
+    }
+    try {
+      return await this.checkoutLocked(userId, input, options);
+    } finally {
+      await this.cart
+        .unlockCheckout(userId, token)
+        .catch((err: unknown) =>
+          this.logger.warn(
+            { err, userId },
+            'Releasing the checkout lock failed',
+          ),
+        );
+    }
+  }
+
+  private async checkoutLocked(
+    userId: string,
+    input: PlaceOrderInput,
+    { cid, beforeCommit }: PlaceOrderOptions,
   ): Promise<Order> {
     // 1. The cart, from Redis.
     const [items, couponCode] = await Promise.all([
@@ -79,8 +124,8 @@ export class CheckoutService {
     // 3. One short transaction. Throwing anywhere inside rolls back all of
     //    it, including the coupon use.
     const order = await this.dataSource.transaction(async (m) => {
-      // One checkout per user at a time, so two parallel orders can't both
-      // pass "first order only". Released on COMMIT or ROLLBACK.
+      // Database-level guard for the coupon rules ("first order only"),
+      // which doesn't depend on Redis. Released on COMMIT or ROLLBACK.
       await m.query('SELECT pg_advisory_xact_lock(hashtext($1))', [userId]);
 
       const coupon = couponCode
