@@ -79,6 +79,38 @@ services:
     container_name: shopflow-mailpit
     ports: ["8025:8025", "1025:1025"]
 
+  # ---------- Object storage (S3-compatible) ----------
+  # MinIO no longer publishes free images (minio/minio, minio/mc are gone), so
+  # this is Bitnami's archived build of the same releases (server 2024-09-22,
+  # mc 2024-09-16). It runs as a non-root user and stores data in /bitnami.
+  minio:
+    image: bitnamilegacy/minio:2024.9.22
+    container_name: shopflow-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_CONSOLE_PORT_NUMBER: 9001
+    ports: ["9002:9000", "9003:9001"] # 9000 is taken locally; console on 9003
+    volumes: [miniodata:/bitnami/minio/data]
+
+  # One-time setup: bucket, public read for products/ only, and tmp/ uploads
+  # that were never confirmed are deleted after 1 day.
+  minio-setup:
+    image: bitnamilegacy/minio:2024.9.22 # includes the mc client
+    container_name: shopflow-minio-setup
+    depends_on: [minio]
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 1; done;
+      mc mb -p local/shopflow-products;
+      mc anonymous set download local/shopflow-products/products;
+      mc ilm rule add --prefix 'tmp/' --expire-days 1 local/shopflow-products;
+      exit 0;
+      "
+
 volumes:
   pgdata:
   mongodata:
+  miniodata:

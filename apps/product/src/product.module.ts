@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { CacheModule, CommonModule, Env } from '@app/common';
+import { ImagesController } from './images/images.controller';
+import { ImagesService } from './images/images.service';
 import { Product, ProductSchema } from './products/product.schema';
 import { ProductsController } from './products/products.controller';
 import { ProductsGrpcController } from './products/products.grpc.controller';
@@ -34,7 +36,7 @@ import { ProductsService } from './products/products.service';
       }),
     }),
   ],
-  controllers: [ProductsController, ProductsGrpcController],
-  providers: [ProductsService],
+  controllers: [ProductsController, ProductsGrpcController, ImagesController],
+  providers: [ProductsService, ImagesService],
 })
 export class ProductModule {}

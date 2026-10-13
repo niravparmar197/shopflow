@@ -113,11 +113,14 @@ export class GatewayModule implements NestModule {
 
     // 5) Admin product writes: JWT here, then HTTP proxy. The product service
     //    checks the admin role itself. Reads go over gRPC (ProductsController).
-    consumer
-      .apply(jwtMiddleware(this.jwt), proxyTo(productService))
-      .forRoutes(
-        { path: 'v1/products', method: RequestMethod.POST },
-        { path: 'v1/products/:id', method: RequestMethod.PATCH },
-      );
+    consumer.apply(jwtMiddleware(this.jwt), proxyTo(productService)).forRoutes(
+      { path: 'v1/products', method: RequestMethod.POST },
+      { path: 'v1/products/:id', method: RequestMethod.PATCH },
+      {
+        path: 'v1/products/:id/images/upload-url',
+        method: RequestMethod.POST,
+      },
+      { path: 'v1/products/:id/images/confirm', method: RequestMethod.POST },
+    );
   }
 }

@@ -17,6 +17,7 @@ const MONGO_DUPLICATE_KEY = 11000;
 const OBJECT_ID = /^[a-f\d]{24}$/i;
 const MAX_LIMIT = 50;
 const MAX_IDS = 100;
+export const MAX_IMAGES = 8;
 
 const PRODUCT_TTL_SEC = 300; // single products
 const LIST_TTL_SEC = 60; // lists change more often
@@ -204,6 +205,31 @@ export class ProductsService {
 
     const updated = (await this.model.findById(id).lean())!;
     await this.invalidate([id, before.slug, updated.slug]);
+    return updated;
+  }
+
+  /** Attaches an uploaded image key, keeping the per-product limit. */
+  async addImage(productId: string, key: string) {
+    // One atomic update: "images.7 doesn't exist" means fewer than 8 images,
+    // so two uploads confirmed at the same time can't push it past the limit.
+    const updated = await this.model
+      .findOneAndUpdate(
+        {
+          _id: productId,
+          [`images.${MAX_IMAGES - 1}`]: { $exists: false },
+        },
+        { $addToSet: { images: key }, $inc: { version: 1 } },
+        { returnDocument: 'after' },
+      )
+      .lean();
+
+    if (!updated) {
+      if (!(await this.model.exists({ _id: productId }))) {
+        throw new NotFoundException('Product not found');
+      }
+      throw new BadRequestException(`Maximum ${MAX_IMAGES} images per product`);
+    }
+    await this.invalidate([updated._id, updated.slug]); // readers see it at once
     return updated;
   }
 

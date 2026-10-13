@@ -1,6 +1,7 @@
 import { Controller, Logger, UseFilters } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Metadata } from '@grpc/grpc-js';
-import { GrpcExceptionFilter } from '@app/common';
+import { Env, GrpcExceptionFilter } from '@app/common';
 import {
   GetProductRequest,
   GetProductsByIdsRequest,
@@ -14,8 +15,9 @@ import { ProductsService } from './products.service';
 
 type StoredProduct = Product & { _id: unknown };
 
-// Mongo document → protobuf message.
-const toMessage = (p: StoredProduct): ProductMessage => ({
+// Mongo document → protobuf message. Images are stored as keys and sent as
+// URLs, so moving from MinIO to a CDN needs no data change.
+const toMessage = (p: StoredProduct, assetBase: string): ProductMessage => ({
   id: String(p._id),
   name: p.name,
   slug: p.slug,
@@ -23,7 +25,7 @@ const toMessage = (p: StoredProduct): ProductMessage => ({
   category: p.category,
   pricePaise: p.pricePaise,
   currency: p.currency,
-  images: p.images ?? [],
+  images: (p.images ?? []).map((key) => `${assetBase}/${key}`),
   version: p.version ?? 0,
   createdAt: new Date(p.createdAt).toISOString(),
   attributesJson: JSON.stringify(p.attributes ?? {}),
@@ -36,12 +38,24 @@ const toMessage = (p: StoredProduct): ProductMessage => ({
 @ProductServiceControllerMethods()
 export class ProductsGrpcController implements ProductServiceController {
   private readonly logger = new Logger(ProductsGrpcController.name);
+  private readonly assetBase: string;
 
-  constructor(private readonly products: ProductsService) {}
+  constructor(
+    private readonly products: ProductsService,
+    config: ConfigService<Env, true>,
+  ) {
+    this.assetBase = config
+      .getOrThrow('ASSET_BASE_URL', { infer: true })
+      .replace(/\/+$/, '');
+  }
+
+  private toMessage(p: StoredProduct) {
+    return toMessage(p, this.assetBase);
+  }
 
   async getProduct(req: GetProductRequest, metadata?: Metadata) {
     this.logCall('GetProduct', metadata);
-    return toMessage(await this.products.findOne(req.idOrSlug));
+    return this.toMessage(await this.products.findOne(req.idOrSlug));
   }
 
   async listProducts(req: ListProductsRequest, metadata?: Metadata) {
@@ -55,7 +69,7 @@ export class ProductsGrpcController implements ProductServiceController {
       limit: req.limit, // clamped by the service
     });
     return {
-      items: res.items.map(toMessage),
+      items: res.items.map((p) => this.toMessage(p)),
       nextCursor: res.nextCursor ?? '',
     };
   }
@@ -63,7 +77,7 @@ export class ProductsGrpcController implements ProductServiceController {
   async getProductsByIds(req: GetProductsByIdsRequest, metadata?: Metadata) {
     this.logCall('GetProductsByIds', metadata);
     const items = await this.products.findByIds(req.ids);
-    return { items: items.map(toMessage) };
+    return { items: items.map((p) => this.toMessage(p)) };
   }
 
   private logCall(method: string, metadata?: Metadata) {

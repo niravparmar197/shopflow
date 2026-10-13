@@ -67,7 +67,7 @@ npm install
 ### Set up locally
 
 ```bash
-docker compose -f infra/docker-compose.yml up -d   # Postgres (5434), Redis (6380), Kafka, ...
+docker compose -f infra/docker-compose.yml up -d   # Postgres (5434), Redis (6380), MinIO (9002, console 9003), ...
 cp apps/user/.env.example apps/user/.env           # then set USER/PASSWORD in DATABASE_URL (shop/shop locally)
 cp apps/gateway/.env.example apps/gateway/.env
 node scripts/generate-jwt-keys.js                  # writes keys/ (git-ignored)
@@ -138,6 +138,7 @@ Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
 | `npm run migration:generate:user -- apps/user/src/database/migrations/<Name>` | Generate a migration from entity changes                           |
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
+| `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
 
