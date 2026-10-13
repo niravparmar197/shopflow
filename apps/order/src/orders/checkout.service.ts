@@ -4,7 +4,7 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { CartRepository } from '../cart/cart.repository';
 import type { CartLine } from '../cart/cart.service';
 import { CatalogClient } from '../catalog/catalog.client';
@@ -17,6 +17,18 @@ import { OrderStatus } from './order-status';
 export interface PlaceOrderInput {
   /** The total the user saw. If prices moved since, we stop and say so. */
   expectedTotalPaise?: number;
+}
+
+/** Runs inside the checkout transaction, just before it commits. */
+export type BeforeCommit = (m: EntityManager, order: Order) => Promise<void>;
+
+export interface PlaceOrderOptions {
+  cid?: string;
+  /**
+   * Lets the caller save its own rows in the same commit as the order (the
+   * idempotency result). Checkout itself knows nothing about idempotency.
+   */
+  beforeCommit?: BeforeCommit;
 }
 
 type PricedLine = Required<Omit<CartLine, 'available'>> & { available: true };
@@ -44,7 +56,7 @@ export class CheckoutService {
   async placeOrder(
     userId: string,
     input: PlaceOrderInput,
-    cid?: string,
+    { cid, beforeCommit }: PlaceOrderOptions = {},
   ): Promise<Order> {
     // 1. The cart, from Redis.
     const [items, couponCode] = await Promise.all([
@@ -128,6 +140,7 @@ export class CheckoutService {
           currency: 'INR',
         },
       });
+      await beforeCommit?.(m, saved);
       return saved;
     });
 

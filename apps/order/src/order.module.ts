@@ -13,8 +13,10 @@ import { CouponsController } from './coupons/coupons.controller';
 import { CouponsService } from './coupons/coupons.service';
 import { OrderHistoryService } from './coupons/order-history.service';
 import { ORDER_ENTITIES } from './database/entities';
+import { IdempotencyService } from './idempotency/idempotency.service';
 import { CheckoutService } from './orders/checkout.service';
 import { OrdersController } from './orders/orders.controller';
+import { OrdersService } from './orders/orders.service';
 import { OutboxService } from './outbox/outbox.service';
 
 @Module({
@@ -51,6 +53,8 @@ import { OutboxService } from './outbox/outbox.service';
     CouponsService,
     OrderHistoryService,
     CheckoutService,
+    OrdersService,
+    IdempotencyService,
     OutboxService,
   ],
 })
