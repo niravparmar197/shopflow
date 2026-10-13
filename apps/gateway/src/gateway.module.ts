@@ -1,11 +1,80 @@
-import { Module } from '@nestjs/common';
-import { CommonModule } from '@app/common';
-import { GatewayController } from './gateway.controller';
-import { GatewayService } from './gateway.service';
+import { readFileSync } from 'node:fs';
+import {
+  Inject,
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtModule, JwtService } from '@nestjs/jwt';
+import type Redis from 'ioredis';
+import { CommonModule, Env } from '@app/common';
+import { jwtMiddleware } from './http/jwt.middleware';
+import { proxyTo } from './http/proxy';
+import { createRateLimiter } from './http/rate-limit';
+import { REDIS, RedisShutdown, redisProvider } from './redis.provider';
 
 @Module({
-  imports: [CommonModule.forRoot({ serviceName: 'gateway' })],
-  controllers: [GatewayController],
-  providers: [GatewayService],
+  imports: [
+    CommonModule.forRoot({ serviceName: 'gateway' }),
+    // Public key only: the gateway can check tokens but never create them.
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        publicKey: readFileSync(
+          config.getOrThrow('JWT_PUBLIC_KEY_PATH', { infer: true }),
+        ),
+      }),
+    }),
+  ],
+  providers: [redisProvider, RedisShutdown],
 })
-export class GatewayModule {}
+export class GatewayModule implements NestModule {
+  constructor(
+    private readonly config: ConfigService<Env, true>,
+    private readonly jwt: JwtService,
+    @Inject(REDIS) private readonly redis: Redis,
+  ) {}
+
+  // Registered as Nest middleware (not app.use) so it runs after the
+  // request logger, which assigns the correlation id.
+  configure(consumer: MiddlewareConsumer) {
+    const userService = this.config.getOrThrow('USER_SERVICE_URL', {
+      infer: true,
+    });
+
+    // 1) Global limit for everything except health probes.
+    consumer
+      .apply(
+        createRateLimiter(this.redis, {
+          prefix: 'rl:global',
+          points: 100,
+          durationSec: 60,
+          message: 'Too many requests',
+        }),
+      )
+      .exclude('health/{*path}')
+      .forRoutes('{*path}');
+
+    // 2) Stricter limit on login against password guessing.
+    consumer
+      .apply(
+        createRateLimiter(this.redis, {
+          prefix: 'rl:login',
+          points: 5,
+          durationSec: 60,
+          message: 'Too many login attempts, try again later',
+        }),
+      )
+      .forRoutes({ path: 'v1/auth/login', method: RequestMethod.POST });
+
+    // 3) Protected routes: JWT first, then proxy.
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(userService))
+      .forRoutes('v1/users{/*path}');
+
+    // 4) Public auth routes: proxy only.
+    consumer.apply(proxyTo(userService)).forRoutes('v1/auth{/*path}');
+  }
+}

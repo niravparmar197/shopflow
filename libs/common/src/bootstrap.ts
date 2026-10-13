@@ -9,15 +9,20 @@ import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 export interface BootstrapOptions {
   /** Route prefix such as 'v1'. Health checks stay unprefixed. */
   globalPrefix?: string;
+  /** Set false when the service streams bodies through untouched (gateway). */
+  bodyParser?: boolean;
   /** Service-specific setup (extra middleware etc.), run before listening. */
   configure?: (app: INestApplication) => void;
 }
 
 export async function bootstrapService(
   rootModule: Type<unknown>,
-  { globalPrefix, configure }: BootstrapOptions = {},
+  { globalPrefix, bodyParser = true, configure }: BootstrapOptions = {},
 ) {
-  const app = await NestFactory.create(rootModule, { bufferLogs: true });
+  const app = await NestFactory.create(rootModule, {
+    bufferLogs: true,
+    bodyParser,
+  });
   app.useLogger(app.get(Logger));
   app.use(helmet());
   if (globalPrefix) {

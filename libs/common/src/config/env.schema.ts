@@ -24,9 +24,12 @@ export const envSchema = z.object({
   ACCESS_TOKEN_TTL: z.string().min(1).default('15m'),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(7),
 
-  USER_SERVICE_URL: z.string().min(1).optional(),
-  PRODUCT_SERVICE_URL: z.string().min(1).optional(),
-  ORDER_SERVICE_URL: z.string().min(1).optional(),
+  USER_SERVICE_URL: z.url().optional(),
+  PRODUCT_SERVICE_URL: z.url().optional(),
+  ORDER_SERVICE_URL: z.url().optional(),
+
+  // Comma-separated browser origins allowed to call the API with cookies.
+  CORS_ORIGINS: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
