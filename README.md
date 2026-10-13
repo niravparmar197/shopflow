@@ -259,6 +259,31 @@ PENDING ──webhook success──► SUCCEEDED ──order.cancelled──► 
 
 Compensation is idempotent twice over: `processed_events` drops redelivered events, and only `RESERVED` reservations can be committed or released, so even a second, different cancel event changes nothing.
 
+## Notifications (F7)
+
+```
+order-/payment-events ─▶ NotificationsConsumer ─┬─ order.created ─▶ Mongo orders_view (projection)
+                                                └─ other events ─▶ Command ─▶ BullMQ "notifications"
+BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SMTP → Mailpit; SES later)
+                                                 └─▶ Mongo notification_logs: QUEUED → SENT / FAILED
+```
+
+| Event              | Email                          |
+| ------------------ | ------------------------------ |
+| `order.paid`       | Order confirmed                |
+| `order.cancelled`  | Order cancelled (+ the reason) |
+| `order.failed`     | We could not place the order   |
+| `payment.refunded` | Your refund is on the way      |
+
+- **Local projection**: notification never calls the order or user service. The buyer's email is snapshotted on the order at checkout and sent in `order.created` (an optional field, so still version 1).
+- **Command pattern**: the planner turns an event into commands (`SendEmailCommand`); the worker runs the handler for the job name. A new channel (SMS) = one command + one handler.
+- **Why a queue between Kafka and SMTP**: Kafka is acknowledged fast, a slow mail server can't stall a partition, and each email retries on its own schedule.
+- **Dedupe**: BullMQ `jobId = <eventId>-<channel>-<template>` + a unique log key. The job is queued _before_ the log is written, so a crash in between loses nothing.
+- **Retries**: 4 attempts with exponential backoff (2 s, 4 s, 8 s; `NOTIFY_BACKOFF_MS`). SMTP 5xx or an unknown template → `FAILED` at once. Delivery is at least once: the worker skips jobs already `SENT`, but SMTP has no idempotency key.
+- **No replay on deploy**: the consumer group starts from now (`fromBeginning = false`), so a new deploy doesn't email customers about old orders.
+- **Ops**: Mailpit at http://localhost:8025, Bull Board at http://localhost:3006/v1/queues (dev only: it can retry and delete jobs), and `GET /v1/notifications?orderId=` (admin) shows what was sent.
+- Tests (`npm run test:e2e:notification`): projection, one email per event (×3 duplicates), every template, HTML escaping, SMTP down → 4 attempts → `FAILED` → retry → `SENT`, flaky → `SENT`, SMTP 550 → `FAILED` after 1 attempt, no email address, unknown order → DLQ, admin-only log endpoint.
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |

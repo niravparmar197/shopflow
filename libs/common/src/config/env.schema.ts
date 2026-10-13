@@ -36,6 +36,8 @@ export const envSchema = z.object({
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
   MAIL_FROM: z.string().min(1).default('ShopFlow <no-reply@shopflow.local>'),
+  // First retry delay for notification jobs (then ×2). Tests use ~100 ms.
+  NOTIFY_BACKOFF_MS: z.coerce.number().int().positive().default(2_000),
 
   // The user service signs with the private key; everyone verifies with the public one.
   JWT_PRIVATE_KEY_PATH: z.string().min(1).optional(),

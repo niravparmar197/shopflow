@@ -24,7 +24,8 @@ export interface NotificationCommand {
 
 export const DEFAULT_JOB_OPTIONS: JobsOptions = {
   attempts: 4, // 1 try + 3 retries
-  backoff: { type: 'exponential', delay: 2_000 }, // 2 s, 4 s, 8 s
+  // 2 s, 4 s, 8 s; the dispatcher sets the first delay (NOTIFY_BACKOFF_MS).
+  backoff: { type: 'exponential', delay: 2_000 },
   // Kept 1 day, so a redelivered event's duplicate job id is still caught.
   removeOnComplete: { age: 24 * 3600 },
   removeOnFail: { age: 7 * 24 * 3600 }, // 7 days to inspect failures

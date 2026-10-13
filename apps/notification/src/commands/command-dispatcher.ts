@@ -1,8 +1,10 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Queue } from 'bullmq';
 import { Model } from 'mongoose';
+import type { Env } from '@app/common';
 import { NotificationLog } from '../logs/notification-log.schema';
 import {
   DEFAULT_JOB_OPTIONS,
@@ -13,12 +15,16 @@ import {
 @Injectable()
 export class CommandDispatcher {
   private readonly logger = new Logger(CommandDispatcher.name);
+  private readonly backoffMs: number;
 
   constructor(
     @InjectQueue(NOTIFICATIONS_QUEUE) private readonly queue: Queue,
     @InjectModel(NotificationLog.name)
     private readonly logs: Model<NotificationLog>,
-  ) {}
+    config: ConfigService<Env, true>,
+  ) {
+    this.backoffMs = config.get('NOTIFY_BACKOFF_MS', { infer: true });
+  }
 
   /**
    * Enqueue FIRST, then log. A crash in between:
@@ -33,7 +39,11 @@ export class CommandDispatcher {
     await this.queue.add(
       cmd.jobName,
       { ...cmd.payload, log: cmd.log },
-      { ...DEFAULT_JOB_OPTIONS, jobId: cmd.id },
+      {
+        ...DEFAULT_JOB_OPTIONS,
+        backoff: { type: 'exponential', delay: this.backoffMs },
+        jobId: cmd.id,
+      },
     );
 
     // $setOnInsert: never overwrites SENT if the worker was faster than us.
