@@ -5,13 +5,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import type { CartLine } from '../cart/cart.service';
 import { Coupon, CouponType } from './coupon.entity';
 import { discountFor } from './discount/discount.strategy';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { OrderHistoryService } from './order-history.service';
-import { CouponContext, CouponRejected, CouponRule } from './rules/coupon-rule';
+import {
+  CouponContext,
+  CouponRejected,
+  CouponRule,
+  OrderHistory,
+} from './rules/coupon-rule';
 import {
   ActiveRule,
   CategoryRule,
@@ -37,7 +42,7 @@ export class CouponsService {
 
   constructor(
     @InjectRepository(Coupon) private readonly repo: Repository<Coupon>,
-    history: OrderHistoryService,
+    private readonly history: OrderHistoryService,
   ) {
     // Built once. Cheap in-memory checks first, the one needing I/O last.
     this.chain = new ActiveRule();
@@ -46,7 +51,7 @@ export class CouponsService {
       .setNext(new UsageLimitRule())
       .setNext(new MinCartRule())
       .setNext(new CategoryRule())
-      .setNext(new FirstOrderRule(history));
+      .setNext(new FirstOrderRule());
   }
 
   async create(dto: CreateCouponDto) {
@@ -124,11 +129,67 @@ export class CouponsService {
     return result;
   }
 
+  /**
+   * Checkout only, inside its transaction: checks the rules again and uses
+   * up one redemption. Any failure is a 409 and rolls the order back.
+   */
+  async redeem(
+    manager: EntityManager,
+    code: string,
+    userId: string,
+    lines: CartLine[],
+    subtotalPaise: number,
+  ): Promise<{ code: string; discountPaise: number }> {
+    const coupon = await manager
+      .getRepository(Coupon)
+      .findOne({ where: { code: code.toUpperCase() } });
+    const result = coupon
+      ? await this.evaluateCoupon(
+          coupon,
+          userId,
+          lines,
+          subtotalPaise,
+          this.history.within(manager),
+        )
+      : null;
+    if (!coupon || !result?.applied) {
+      throw new ConflictException({
+        code: 'COUPON_NOT_APPLICABLE',
+        message: result?.reason ?? 'Coupon not found',
+      });
+    }
+    await this.consumeOne(manager, coupon.id);
+    return { code: coupon.code, discountPaise: result.discountPaise };
+  }
+
+  /**
+   * Check and +1 in one UPDATE. Postgres locks the row, so a second
+   * checkout waits, re-checks the WHERE against the new count, and updates
+   * nothing. A "read count, then save count + 1" would let both through.
+   */
+  private async consumeOne(manager: EntityManager, couponId: string) {
+    const res = await manager
+      .createQueryBuilder()
+      .update(Coupon)
+      .set({ usedCount: () => 'used_count + 1' })
+      .where('id = :id', { id: couponId })
+      .andWhere('is_active = true')
+      .andWhere('(usage_limit IS NULL OR used_count < usage_limit)')
+      .execute();
+    if (res.affected !== 1) {
+      throw new ConflictException({
+        code: 'COUPON_EXHAUSTED',
+        message: 'This coupon has reached its usage limit',
+      });
+    }
+  }
+
   private async evaluateCoupon(
     coupon: Coupon,
     userId: string,
     lines: CartLine[],
     subtotalPaise: number,
+    history: OrderHistory = this.history,
   ): Promise<CouponResult> {
     const priced = lines.filter(
       (l) => l.available && l.lineTotalPaise !== undefined,
@@ -139,6 +200,7 @@ export class CouponsService {
       lines: priced,
       subtotalPaise,
       now: new Date(),
+      history,
     };
 
     try {

@@ -1,12 +1,22 @@
 import type { CartLine } from '../../cart/cart.service';
 import type { Coupon } from '../coupon.entity';
 
+/**
+ * What the rules need to know about past orders. They depend on this
+ * interface, not on the orders table (Dependency Inversion).
+ */
+export interface OrderHistory {
+  countPlacedOrders(userId: string): Promise<number>;
+}
+
 export interface CouponContext {
   coupon: Coupon;
   userId: string;
   lines: CartLine[]; // only available, priced lines
   subtotalPaise: number;
   now: Date;
+  // Per call, not per rule: at checkout it must read through the transaction.
+  history: OrderHistory;
 }
 
 /** A rule said no. The message is safe to show to the customer. */

@@ -34,7 +34,7 @@ export function sendError(
 export interface ErrorResponse {
   code: string;
   message: string;
-  details?: unknown[];
+  details?: unknown; // validation messages, or extra data an exception adds
   correlationId: string;
 }
 
@@ -78,7 +78,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? customCode
           : (HttpStatus[status] ?? 'ERROR'), // e.g. "CONFLICT"
       message: isValidation ? 'Validation failed' : String(message),
-      details: isValidation ? (message as unknown[]) : undefined,
+      details: isValidation
+        ? message
+        : (body as { details?: unknown } | null)?.details,
       correlationId,
     };
     res.status(status).json(payload);

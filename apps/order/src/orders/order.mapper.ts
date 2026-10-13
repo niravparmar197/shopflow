@@ -1,0 +1,22 @@
+import { Order } from './order.entity';
+
+/** Public JSON shape of an order (no version or internal ids). */
+export function toOrderResponse(order: Order) {
+  return {
+    id: order.id,
+    status: order.status,
+    subtotalPaise: order.subtotalPaise,
+    discountPaise: order.discountPaise,
+    totalPaise: order.totalPaise,
+    couponCode: order.couponCode,
+    currency: order.currency,
+    items: (order.items ?? []).map((item) => ({
+      productId: item.productId,
+      name: item.name,
+      unitPricePaise: item.unitPricePaise,
+      quantity: item.quantity,
+      lineTotalPaise: item.lineTotalPaise,
+    })),
+    createdAt: order.createdAt,
+  };
+}
