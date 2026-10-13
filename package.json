@@ -17,7 +17,11 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/gateway/test/jest-e2e.json"
+    "test:e2e": "jest --config ./apps/gateway/test/jest-e2e.json",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "migration:generate:user": "npm run typeorm -- migration:generate -d apps/user/src/database/data-source.ts",
+    "migration:run:user": "npm run typeorm -- migration:run -d apps/user/src/database/data-source.ts",
+    "migration:revert:user": "npm run typeorm -- migration:revert -d apps/user/src/database/data-source.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -25,24 +29,33 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/terminus": "^12.1.0",
+    "@nestjs/typeorm": "^12.0.2",
+    "bcrypt": "^6.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
     "helmet": "^8.3.0",
     "nestjs-pino": "^5.3.1",
+    "pg": "^8.23.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.2.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "typeorm": "^1.1.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@babel/plugin-transform-modules-commonjs": "^7.29.7",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
+    "babel-plugin-transform-import-meta": "^2.3.3",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -67,6 +80,16 @@
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
+      "node_modules.@nestjs.(typeorm|terminus).+\\.js$": [
+        "babel-jest",
+        {
+          "plugins": [
+            "./tools/jest/rename-esm-require.js",
+            "babel-plugin-transform-import-meta",
+            "@babel/plugin-transform-modules-commonjs"
+          ]
+        }
+      ],
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
@@ -83,6 +106,9 @@
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
       "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
-    }
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!@nestjs/(typeorm|terminus)/)"
+    ]
   }
 }
