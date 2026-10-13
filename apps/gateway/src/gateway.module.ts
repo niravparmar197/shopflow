@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import type Redis from 'ioredis';
-import { CommonModule, Env } from '@app/common';
+import { CommonModule, Env, REDIS, RedisModule } from '@app/common';
 import {
   grpcLoaderOptions,
   PRODUCT_PACKAGE_NAME,
@@ -23,11 +23,11 @@ import {
   PRODUCT_CLIENT,
   ProductsController,
 } from './products/products.controller';
-import { REDIS, RedisShutdown, redisProvider } from './redis.provider';
 
 @Module({
   imports: [
     CommonModule.forRoot({ serviceName: 'gateway' }),
+    RedisModule,
     // Public key only: the gateway can check tokens but never create them.
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -60,7 +60,6 @@ import { REDIS, RedisShutdown, redisProvider } from './redis.provider';
     ]),
   ],
   controllers: [ProductsController],
-  providers: [redisProvider, RedisShutdown],
 })
 export class GatewayModule implements NestModule {
   constructor(

@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
-import { CommonModule, Env } from '@app/common';
+import { CacheModule, CommonModule, Env } from '@app/common';
 import { Product, ProductSchema } from './products/product.schema';
 import { ProductsController } from './products/products.controller';
 import { ProductsGrpcController } from './products/products.grpc.controller';
@@ -12,6 +12,7 @@ import { ProductsService } from './products/products.service';
 @Module({
   imports: [
     CommonModule.forRoot({ serviceName: 'product' }),
+    CacheModule,
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>) => ({
