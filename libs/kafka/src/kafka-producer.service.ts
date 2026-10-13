@@ -1,6 +1,7 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
   type Kafka,
+  type Message,
   Partitioners,
   type Producer,
   type TopicMessages,
@@ -39,6 +40,11 @@ export class KafkaProducerService implements OnModuleDestroy {
     await this.connect();
     // acks=all: confirmed only once every in-sync replica has the message.
     await this.producer.sendBatch({ topicMessages, acks: -1 });
+  }
+
+  async send(topic: string, messages: Message[]): Promise<void> {
+    await this.connect();
+    await this.producer.send({ topic, messages, acks: -1 });
   }
 
   async onModuleDestroy() {

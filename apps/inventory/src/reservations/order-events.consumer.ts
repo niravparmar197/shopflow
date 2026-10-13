@@ -10,7 +10,7 @@ import {
   OrderEvents,
   Topics,
 } from '@app/events';
-import { BaseConsumer, KAFKA_CLIENT } from '@app/kafka';
+import { BaseConsumer, KAFKA_CLIENT, KafkaProducerService } from '@app/kafka';
 import { ReservationService } from './reservation.service';
 
 /** order.created → reserve stock. The steps around it come from BaseConsumer. */
@@ -23,10 +23,11 @@ export class OrderEventsConsumer extends BaseConsumer {
   constructor(
     ds: DataSource,
     @Inject(KAFKA_CLIENT) kafka: Kafka,
+    producer: KafkaProducerService,
     config: ConfigService<Env, true>,
     private readonly reservations: ReservationService,
   ) {
-    super(ds, kafka, config);
+    super(ds, kafka, producer, config);
   }
 
   protected parse(event: EventEnvelope) {

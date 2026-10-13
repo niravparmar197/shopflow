@@ -5,6 +5,7 @@ export function toOrderResponse(order: Order) {
   return {
     id: order.id,
     status: order.status,
+    failureReason: order.failureReason,
     subtotalPaise: order.subtotalPaise,
     discountPaise: order.discountPaise,
     totalPaise: order.totalPaise,

@@ -11,8 +11,17 @@ const brokers = (process.env.KAFKA_BROKERS || 'localhost:9092').split(',');
 const partitions = Number(process.env.KAFKA_PARTITIONS || 3);
 const replicationFactor = Number(process.env.KAFKA_RF || 1); // 1 locally, 3 in production
 
-const TOPICS = ['order-events', 'inventory-events', 'payment-events'];
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TOPICS = [
+  { name: 'order-events', retentionMs: 7 * DAY_MS },
+  { name: 'inventory-events', retentionMs: 7 * DAY_MS },
+  { name: 'payment-events', retentionMs: 7 * DAY_MS },
+  // Per consumer group: <group>.retry and <group>.dlq (see BaseConsumer).
+  { name: 'inventory-svc.retry', retentionMs: 7 * DAY_MS },
+  { name: 'inventory-svc.dlq', retentionMs: 14 * DAY_MS }, // longer: a human must look
+  { name: 'order-svc.retry', retentionMs: 7 * DAY_MS },
+  { name: 'order-svc.dlq', retentionMs: 14 * DAY_MS },
+];
 
 async function main() {
   const admin = new Kafka({
@@ -23,16 +32,16 @@ async function main() {
   await admin.connect();
   try {
     const existing = new Set(await admin.listTopics());
-    const missing = TOPICS.filter((t) => !existing.has(t));
+    const missing = TOPICS.filter((t) => !existing.has(t.name));
     if (missing.length) {
       await admin.createTopics({
         waitForLeaders: true,
-        topics: missing.map((topic) => ({
-          topic,
+        topics: missing.map((t) => ({
+          topic: t.name,
           numPartitions: partitions,
           replicationFactor,
           configEntries: [
-            { name: 'retention.ms', value: String(SEVEN_DAYS_MS) },
+            { name: 'retention.ms', value: String(t.retentionMs) },
             // With acks=all, a write needs this many replicas: 1 locally, 2 in production.
             {
               name: 'min.insync.replicas',
@@ -42,9 +51,10 @@ async function main() {
         })),
       });
     }
-    const present = TOPICS.filter((t) => existing.has(t));
+    const names = (list) => list.map((t) => t.name).join(', ');
+    const present = TOPICS.filter((t) => existing.has(t.name));
     console.log(
-      `created: [${missing.join(', ')}], already there: [${present.join(', ')}]`,
+      `created: [${names(missing)}], already there: [${names(present)}]`,
     );
   } finally {
     await admin.disconnect();

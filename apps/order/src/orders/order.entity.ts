@@ -40,6 +40,15 @@ export class Order {
   @Column({ name: 'coupon_code', type: 'varchar', length: 20, nullable: true })
   couponCode!: string | null;
 
+  // Why the order FAILED, e.g. OUT_OF_STOCK.
+  @Column({
+    name: 'failure_reason',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  failureReason!: string | null;
+
   @Column({ type: 'varchar', length: 3, default: 'INR' })
   currency!: string;
 

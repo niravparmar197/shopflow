@@ -1,4 +1,4 @@
-import { OutboxEvent } from '@app/kafka';
+import { OutboxEvent, ProcessedEvent } from '@app/kafka';
 import { Coupon } from '../coupons/coupon.entity';
 import { IdempotencyKey } from '../idempotency/idempotency-key.entity';
 import { OrderItem } from '../orders/order-item.entity';
@@ -11,4 +11,5 @@ export const ORDER_ENTITIES = [
   OrderItem,
   OutboxEvent,
   IdempotencyKey,
+  ProcessedEvent,
 ];

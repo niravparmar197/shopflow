@@ -32,6 +32,7 @@
     "seed:product": "ts-node --transpile-only apps/product/src/seed.ts",
     "proto:gen": "node scripts/proto-gen.js",
     "kafka:topics": "node scripts/kafka-topics.js",
+    "dlq:replay": "node scripts/dlq-replay.js",
     "test:e2e:product": "jest --config apps/product/test/jest-e2e.json --runInBand",
     "test:e2e:order": "jest --config apps/order/test/jest-e2e.json --runInBand"
   },

@@ -18,6 +18,8 @@ import { IdempotencyService } from './idempotency/idempotency.service';
 import { CheckoutService } from './orders/checkout.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
+import { InventoryEventsConsumer } from './saga/inventory-events.consumer';
+import { OrderSagaService } from './saga/order-saga.service';
 
 @Module({
   imports: [
@@ -56,6 +58,8 @@ import { OrdersService } from './orders/orders.service';
     CheckoutService,
     OrdersService,
     IdempotencyService,
+    OrderSagaService,
+    InventoryEventsConsumer,
   ],
 })
 export class OrderModule {}

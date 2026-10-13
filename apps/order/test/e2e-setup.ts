@@ -54,6 +54,7 @@ export default async function setup() {
     // No Kafka in these tests: the outbox is checked in the database.
     KAFKA_BROKERS: '127.0.0.1:1',
     OUTBOX_RELAY_ENABLED: 'false',
+    KAFKA_CONSUMERS_ENABLED: 'false',
   });
 
   // Handed to e2e-teardown.ts (same process).
