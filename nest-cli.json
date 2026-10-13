@@ -109,6 +109,15 @@
         "tsConfigPath": "libs/resilience/tsconfig.lib.json"
       }
     },
+    "scheduler": {
+      "type": "library",
+      "root": "libs/scheduler",
+      "entryFile": "index",
+      "sourceRoot": "libs/scheduler/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/scheduler/tsconfig.lib.json"
+      }
+    },
     "user": {
       "type": "application",
       "root": "apps/user",

@@ -1,9 +1,13 @@
 {
-  "moduleFileExtensions": ["js", "json", "ts"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
   "rootDir": "../../..",
   "testRegex": "apps/order/test/.*\\.e2e-spec\\.ts$",
   "transform": {
-    "node_modules.@nestjs.(config|jwt|mapped-types|mongoose|terminus|typeorm).+\\.js$": [
+    "node_modules.@nestjs.(config|jwt|mapped-types|mongoose|schedule|terminus|typeorm).+\\.js$": [
       "babel-jest",
       {
         "plugins": [
@@ -16,14 +20,15 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": [
-    "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|terminus|typeorm)/)"
+    "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|schedule|terminus|typeorm)/)"
   ],
   "testEnvironment": "node",
   "moduleNameMapper": {
     "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
     "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
     "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
-    "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
+    "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1",
+    "^@app/scheduler(|/.*)$": "<rootDir>/libs/scheduler/src/$1"
   },
   "testTimeout": 120000,
   "globalSetup": "<rootDir>/apps/order/test/e2e-setup.ts",

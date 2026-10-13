@@ -30,6 +30,13 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // Scheduled jobs (libs/scheduler). Off in tests, which call tick() by hand.
+  JOBS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  // 6-field cron (seconds first), UTC. Unset → the job's default.
+  HOUSEKEEPING_CRON: z.string().min(1).optional(),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(500),
   OUTBOX_BATCH: z.coerce.number().int().positive().default(100),
 

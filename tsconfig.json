@@ -51,6 +51,12 @@
       ],
       "@app/resilience/*": [
         "libs/resilience/src/*"
+      ],
+      "@app/scheduler": [
+        "libs/scheduler/src"
+      ],
+      "@app/scheduler/*": [
+        "libs/scheduler/src/*"
       ]
     }
   }
