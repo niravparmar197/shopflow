@@ -3,3 +3,4 @@ export * from './config/env.schema';
 export * from './health/health.module';
 export * from './health/health.controller';
 export * from './bootstrap';
+export * from './filters/all-exceptions.filter';

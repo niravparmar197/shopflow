@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
@@ -30,6 +31,17 @@ export class CommonModule {
               pinoHttp: {
                 name: config.get('SERVICE_NAME', { infer: true }),
                 level: config.get('LOG_LEVEL', { infer: true }),
+                // Reuse the caller's correlation id, or start a new one, and
+                // echo it back so clients can quote it when reporting errors.
+                genReqId: (req, res) => {
+                  const header = req.headers['x-correlation-id'];
+                  const id =
+                    typeof header === 'string' && header
+                      ? header
+                      : randomUUID();
+                  res.setHeader('x-correlation-id', id);
+                  return id;
+                },
                 autoLogging: {
                   ignore: (req) => req.url?.startsWith('/health') ?? false,
                 },
