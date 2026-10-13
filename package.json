@@ -17,7 +17,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "npm run test:e2e:user && npm run test:e2e:product",
+    "test:e2e": "npm run test:e2e:user && npm run test:e2e:product && npm run test:e2e:order",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:generate:user": "npm run typeorm -- migration:generate -d apps/user/src/database/data-source.ts",
     "migration:run:user": "npm run typeorm -- migration:run -d apps/user/src/database/data-source.ts",
@@ -28,7 +28,8 @@
     "test:e2e:user": "jest --config apps/user/test/jest-e2e.json --runInBand",
     "seed:product": "ts-node --transpile-only apps/product/src/seed.ts",
     "proto:gen": "node scripts/proto-gen.js",
-    "test:e2e:product": "jest --config apps/product/test/jest-e2e.json --runInBand"
+    "test:e2e:product": "jest --config apps/product/test/jest-e2e.json --runInBand",
+    "test:e2e:order": "jest --config apps/order/test/jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",

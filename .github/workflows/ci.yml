@@ -45,6 +45,11 @@ jobs:
       - name: Integration tests (product)
         run: npm run test:e2e:product
 
+      # Real PostgreSQL (migrations) + Redis; the product service is faked.
+      # Includes the concurrency test for the atomic cart limit.
+      - name: Integration tests (order)
+        run: npm run test:e2e:order
+
       - name: Build all services
         run: |
           for app in gateway user product order payment inventory notification; do

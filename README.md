@@ -137,6 +137,31 @@ Admin  → presigned POST ──▶ S3 / MinIO  (server never handles the file)
 - Images: S3 presigned POST (5 MB, type locked) → `tmp/` → confirm → `products/`; `tmp/` auto-deleted after 1 day
 - Tests: unit (cache, images with S3 mocked) + integration with real MongoDB + Redis via Testcontainers (`npm run test:e2e:product`), covering pagination, roles, 409s, cache invalidation, concurrent edits and the gRPC contract
 
+## Cart + coupons (F3)
+
+```
+Client → Gateway (JWT) → Order service ──▶ Redis: cart:{userId} (7-day TTL)
+                              ├──gRPC──▶ Product: live prices (1 s deadline)
+                              └────────▶ PostgreSQL: coupons
+```
+
+- Cart in a Redis hash `cart:{userId}` (productId → qty). Prices are never stored; they always come live from the product service
+- Limits (20 different items, qty ≤ 10) enforced atomically with Redis Lua scripts, so parallel adds can't overshoot
+- Product service down → the cart still loads without prices (`pricingAvailable: false`); adding returns 503
+- Coupons in PostgreSQL. Rules are a **Chain of Responsibility** (Active → Dates → Usage → MinCart → Category → FirstOrder); discounts are a **Strategy** (Percent with cap / Flat)
+- The coupon is re-checked on every cart read; if the cart stops qualifying it shows `applied: false` + reason instead of failing
+- Tests: integration with real PostgreSQL + Redis via Testcontainers, product service faked (`npm run test:e2e:order`), incl. 25 parallel adds → exactly 20 items
+
+| Endpoint                              | Auth  | Notes                                        |
+| ------------------------------------- | ----- | -------------------------------------------- |
+| `GET /v1/cart`                        | user  | items, live prices, coupon, totals           |
+| `POST /v1/cart/items`                 | user  | `{ productId, qty }`, adds to existing qty   |
+| `PATCH /v1/cart/items/:productId`     | user  | `{ qty }`                                    |
+| `DELETE /v1/cart/items/:productId`    | user  |                                              |
+| `POST /v1/cart/coupon`                | user  | `{ code }`, 400 with the reason if not valid |
+| `DELETE /v1/cart/coupon`              | user  |                                              |
+| `POST /v1/coupons`, `GET /v1/coupons` | admin | create / list coupons                        |
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |
@@ -151,6 +176,7 @@ Admin  → presigned POST ──▶ S3 / MinIO  (server never handles the file)
 | `npm run test:e2e`                                                            | Run integration tests (needs Docker)                               |
 | `npm run migration:run:user`                                                  | Apply user service migrations                                      |
 | `npm run migration:generate:user -- apps/user/src/database/migrations/<Name>` | Generate a migration from entity changes                           |
+| `npm run migration:run:order`                                                 | Apply order service migrations                                     |
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
 | `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
