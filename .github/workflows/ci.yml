@@ -56,6 +56,11 @@ jobs:
       - name: Integration tests (inventory)
         run: npm run test:e2e:inventory
 
+      # Real PostgreSQL + Kafka, fake provider: signed webhooks + dedupe,
+      # webhook vs timeout race ×20, auto-refund, circuit breaker, compensation.
+      - name: Integration tests (payment)
+        run: npm run test:e2e:payment
+
       - name: Build all services
         run: |
           for app in gateway user product order payment inventory notification; do

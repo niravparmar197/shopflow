@@ -17,7 +17,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "npm run test:e2e:user && npm run test:e2e:product && npm run test:e2e:order && npm run test:e2e:inventory",
+    "test:e2e": "npm run test:e2e:user && npm run test:e2e:product && npm run test:e2e:order && npm run test:e2e:inventory && npm run test:e2e:payment",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "migration:generate:user": "npm run typeorm -- migration:generate -d apps/user/src/database/data-source.ts",
     "migration:run:user": "npm run typeorm -- migration:run -d apps/user/src/database/data-source.ts",
@@ -28,6 +28,9 @@
     "migration:generate:inventory": "npm run typeorm -- migration:generate -d apps/inventory/src/database/data-source.ts",
     "migration:run:inventory": "npm run typeorm -- migration:run -d apps/inventory/src/database/data-source.ts",
     "migration:revert:inventory": "npm run typeorm -- migration:revert -d apps/inventory/src/database/data-source.ts",
+    "migration:generate:payment": "npm run typeorm -- migration:generate -d apps/payment/src/database/data-source.ts",
+    "migration:run:payment": "npm run typeorm -- migration:run -d apps/payment/src/database/data-source.ts",
+    "migration:revert:payment": "npm run typeorm -- migration:revert -d apps/payment/src/database/data-source.ts",
     "test:e2e:user": "jest --config apps/user/test/jest-e2e.json --runInBand",
     "seed:product": "ts-node --transpile-only apps/product/src/seed.ts",
     "proto:gen": "node scripts/proto-gen.js",
@@ -35,7 +38,8 @@
     "dlq:replay": "node scripts/dlq-replay.js",
     "test:e2e:product": "jest --config apps/product/test/jest-e2e.json --runInBand",
     "test:e2e:order": "jest --config apps/order/test/jest-e2e.json --runInBand",
-    "test:e2e:inventory": "jest --config apps/inventory/test/jest-e2e.json --runInBand"
+    "test:e2e:inventory": "jest --config apps/inventory/test/jest-e2e.json --runInBand",
+    "test:e2e:payment": "jest --config apps/payment/test/jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",
@@ -62,12 +66,16 @@
     "kafkajs": "^2.2.4",
     "mongoose": "^9.11.2",
     "nestjs-pino": "^5.3.1",
+    "opossum": "^10.0.0",
+    "p-retry": "^4.6.2",
     "pg": "^8.23.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.2.0",
     "rate-limiter-flexible": "^11.2.1",
+    "razorpay": "^2.9.8",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "stripe": "^23.0.0",
     "typeorm": "^1.1.2",
     "zod": "^4.6.7"
   },
@@ -88,6 +96,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/opossum": "^8.1.9",
     "@types/supertest": "^7.0.0",
     "babel-plugin-transform-import-meta": "^2.3.3",
     "eslint": "^9.18.0",
@@ -140,7 +149,8 @@
       "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
-      "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
+      "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1",
+      "^@app/resilience(|/.*)$": "<rootDir>/libs/resilience/src/$1"
     },
     "transformIgnorePatterns": [
       "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|terminus|typeorm)/)"

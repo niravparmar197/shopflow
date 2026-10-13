@@ -1,9 +1,13 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import {
+  type OrderCancelledV1,
   type OrderConfirmedV1,
   OrderEvents,
   type OrderFailedV1,
+  type OrderPaidV1,
+  type PaymentFailedV1,
+  type PaymentSucceededV1,
   type StockFailedV1,
   type StockReservedV1,
 } from '@app/events';
@@ -15,6 +19,14 @@ import type { OrderAction } from '../orders/order-status';
  * The order's side of the saga (choreography: each service reacts to the
  * others' events; nobody coordinates). Runs inside the consumer's
  * transaction.
+ *
+ * Order OWNS the order status: Inventory and Payment react to order.paid /
+ * order.cancelled, never to each other's events.
+ *
+ *   stock.reserved    → CONFIRMED (order.confirmed → Payment waits for money)
+ *   payment.succeeded → PAID      (order.paid → Inventory commits)
+ *   payment.failed    → CANCELLED (order.cancelled → Inventory releases,
+ *                                  Payment refunds if it was paid)
  */
 @Injectable()
 export class OrderSagaService {
@@ -64,6 +76,51 @@ export class OrderSagaService {
       data: { orderId: order.id, userId: order.userId, reason: data.reason },
     });
     this.logger.warn(`Order ${order.id} → FAILED (${data.reason})`);
+  }
+
+  async onPaymentSucceeded(
+    m: EntityManager,
+    data: PaymentSucceededV1,
+    correlationId?: string,
+  ) {
+    const order = await this.lockOrder(m, data.orderId);
+    // Not CONFIRMED (e.g. already CANCELLED) → ignored here. Payment refunds
+    // it, because it also receives our order.cancelled.
+    if (!this.tryApply(order, 'pay')) return;
+
+    await m.getRepository(Order).save(order);
+    await this.outbox.add<OrderPaidV1>(m, {
+      aggregateType: 'order',
+      aggregateId: order.id,
+      eventType: OrderEvents.PAID,
+      correlationId,
+      data: {
+        orderId: order.id,
+        userId: order.userId,
+        totalPaise: order.totalPaise,
+      },
+    });
+    this.logger.log(`Order ${order.id} → PAID`);
+  }
+
+  async onPaymentFailed(
+    m: EntityManager,
+    data: PaymentFailedV1,
+    correlationId?: string,
+  ) {
+    const order = await this.lockOrder(m, data.orderId);
+    if (!this.tryApply(order, 'cancel')) return;
+
+    order.failureReason = data.reason.slice(0, 50);
+    await m.getRepository(Order).save(order);
+    await this.outbox.add<OrderCancelledV1>(m, {
+      aggregateType: 'order',
+      aggregateId: order.id,
+      eventType: OrderEvents.CANCELLED,
+      correlationId,
+      data: { orderId: order.id, userId: order.userId, reason: data.reason },
+    });
+    this.logger.warn(`Order ${order.id} → CANCELLED (${data.reason})`);
   }
 
   // Row lock: other writers (the expiry job in F8) may change the same order

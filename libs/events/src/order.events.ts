@@ -4,7 +4,8 @@ export const OrderEvents = {
   CREATED: 'order.created',
   CONFIRMED: 'order.confirmed', // stock reserved; Payment listens to this (F6)
   FAILED: 'order.failed',
-  CANCELLED: 'order.cancelled',
+  PAID: 'order.paid', // Inventory commits the reservation (reserved → sold)
+  CANCELLED: 'order.cancelled', // Inventory releases stock; Payment refunds if paid
 } as const;
 
 const OrderItem = z.object({
@@ -37,3 +38,17 @@ export const OrderFailedV1Schema = z.object({
   reason: z.string().min(1),
 });
 export type OrderFailedV1 = z.infer<typeof OrderFailedV1Schema>;
+
+export const OrderPaidV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  totalPaise: z.number().int().nonnegative(),
+});
+export type OrderPaidV1 = z.infer<typeof OrderPaidV1Schema>;
+
+export const OrderCancelledV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  reason: z.string().min(1), // PAYMENT_TIMEOUT, CARD_DECLINED, USER_CANCELLED (F8)…
+});
+export type OrderCancelledV1 = z.infer<typeof OrderCancelledV1Schema>;

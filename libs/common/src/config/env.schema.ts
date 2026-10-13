@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+// `KEY=` (empty, as in .env.example) counts as not set.
+const optionalSecret = z
+  .string()
+  .optional()
+  .transform((v) => v || undefined);
+
 export const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -50,10 +56,28 @@ export const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().min(1).optional(),
   AWS_SECRET_ACCESS_KEY: z.string().min(1).optional(),
 
+  // Payments (payment service). Keys only ever in .env, never committed.
+  PAYMENT_PROVIDER: z.enum(['razorpay', 'stripe', 'fake']).default('fake'),
+  PAYMENT_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+  // Expiry + refund-retry job. Every pod runs it (SKIP LOCKED splits the rows).
+  PAYMENT_SWEEPER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  PAYMENT_SWEEP_MS: z.coerce.number().int().positive().default(30_000),
+  RAZORPAY_KEY_ID: optionalSecret,
+  RAZORPAY_KEY_SECRET: optionalSecret,
+  RAZORPAY_WEBHOOK_SECRET: optionalSecret,
+  STRIPE_SECRET_KEY: optionalSecret,
+  STRIPE_PUBLISHABLE_KEY: optionalSecret,
+  STRIPE_WEBHOOK_SECRET: optionalSecret,
+  FAKE_WEBHOOK_SECRET: optionalSecret,
+
   USER_SERVICE_URL: z.url().optional(),
   PRODUCT_SERVICE_URL: z.url().optional(),
   ORDER_SERVICE_URL: z.url().optional(),
   INVENTORY_SERVICE_URL: z.url().optional(),
+  PAYMENT_SERVICE_URL: z.url().optional(),
 
   // Comma-separated browser origins allowed to call the API with cookies.
   CORS_ORIGINS: z.string().optional(),

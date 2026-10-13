@@ -45,6 +45,12 @@
       ],
       "@app/proto/*": [
         "libs/proto/src/*"
+      ],
+      "@app/resilience": [
+        "libs/resilience/src"
+      ],
+      "@app/resilience/*": [
+        "libs/resilience/src/*"
       ]
     }
   }

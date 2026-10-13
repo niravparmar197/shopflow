@@ -110,6 +110,75 @@ export class ReservationService {
       `Order ${order.orderId}: reserved ${lines.length} product(s)`,
     );
   }
+
+  /** order.paid → the items are really sold: reserved goes down, available stays. */
+  async commit(m: EntityManager, orderId: string) {
+    const lines = await this.moveReservations(
+      m,
+      orderId,
+      ReservationStatus.COMMITTED,
+    );
+    for (const l of lines) {
+      await m
+        .createQueryBuilder()
+        .update(Stock)
+        .set({ reserved: () => 'reserved - :qty' })
+        .where('product_id = :id', { id: l.productId, qty: l.quantity })
+        .execute();
+    }
+    this.logger.log(
+      `Order ${orderId}: committed ${lines.length} reservation(s)`,
+    );
+  }
+
+  /** order.cancelled → COMPENSATION: the stock goes back on sale. */
+  async release(m: EntityManager, orderId: string) {
+    const lines = await this.moveReservations(
+      m,
+      orderId,
+      ReservationStatus.RELEASED,
+    );
+    for (const l of lines) {
+      await m
+        .createQueryBuilder()
+        .update(Stock)
+        .set({
+          available: () => 'available + :qty',
+          reserved: () => 'reserved - :qty',
+        })
+        .where('product_id = :id', { id: l.productId, qty: l.quantity })
+        .execute();
+    }
+    this.logger.log(
+      `Order ${orderId}: released ${lines.length} reservation(s)`,
+    );
+  }
+
+  /**
+   * Only rows still RESERVED move, so even a DIFFERENT event (not just a
+   * redelivery, which processed_events already skips) can't commit or
+   * release the same reservation twice: it finds 0 rows.
+   */
+  private async moveReservations(
+    m: EntityManager,
+    orderId: string,
+    to: ReservationStatus.COMMITTED | ReservationStatus.RELEASED,
+  ): Promise<Line[]> {
+    const res = await m
+      .createQueryBuilder()
+      .update(Reservation)
+      .set({ status: to })
+      .where('order_id = :orderId AND status = :s', {
+        orderId,
+        s: ReservationStatus.RESERVED,
+      })
+      // A string, not an array: array entries are matched to entity
+      // properties, and an unknown one ('product_id') is silently dropped.
+      .returning('product_id AS "productId", quantity')
+      .execute();
+    // Same lock order as reserveForOrder → no deadlocks between them.
+    return sortLines(res.raw as Line[]);
+  }
 }
 
 /**
@@ -122,7 +191,10 @@ function mergeAndSort(items: Line[]): Line[] {
   for (const i of items) {
     qty.set(i.productId, (qty.get(i.productId) ?? 0) + i.quantity);
   }
-  return [...qty]
-    .map(([productId, quantity]) => ({ productId, quantity }))
-    .sort((a, b) => (a.productId < b.productId ? -1 : 1));
+  return sortLines(
+    [...qty].map(([productId, quantity]) => ({ productId, quantity })),
+  );
 }
+
+const sortLines = (lines: Line[]) =>
+  lines.sort((a, b) => (a.productId < b.productId ? -1 : 1));

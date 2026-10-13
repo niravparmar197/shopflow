@@ -15,7 +15,7 @@ const B = 'b'.repeat(24);
 type Line = { productId: string; quantity: number };
 
 // Real inventory service + real PostgreSQL + real Kafka. The test plays the
-// order service: it puts order.created on Kafka and checks what happened.
+// order service: it puts order.* events on Kafka and checks what happened.
 describe('Inventory (e2e)', () => {
   let ctx: Awaited<ReturnType<typeof startInventoryApp>>;
   let ds: DataSource;
@@ -69,6 +69,38 @@ describe('Inventory (e2e)', () => {
         value: JSON.stringify(e),
       })),
     });
+
+  const orderPaid = (orderId: string) =>
+    envelope('order.paid', { orderId, userId: randomUUID(), totalPaise: 100 });
+
+  const orderCancelled = (orderId: string) =>
+    envelope('order.cancelled', {
+      orderId,
+      userId: randomUUID(),
+      reason: 'PAYMENT_TIMEOUT',
+    });
+
+  const reservationStatus = async (orderId: string) =>
+    (
+      await ds.query<{ status: string }[]>(
+        'SELECT status FROM reservations WHERE order_id = $1',
+        [orderId],
+      )
+    )[0]?.status;
+
+  const handled = async (eventId: string) =>
+    (await count('processed_events', 'event_id = $1', [eventId])) === 1;
+
+  /** An order holding `qty` of A (out of 5). */
+  async function reservedOrder(qty = 2) {
+    await setStock(A, 5);
+    const ev = orderCreated([{ productId: A, quantity: qty }]);
+    await publish(ev);
+    await eventually(async () =>
+      expect(await stockOf(A)).toEqual({ available: 5 - qty, reserved: qty }),
+    );
+    return ev.data.orderId;
+  }
 
   // ---------- lifecycle ----------
   beforeAll(async () => {
@@ -287,5 +319,53 @@ describe('Inventory (e2e)', () => {
     } finally {
       await ds.query('ALTER TABLE IF EXISTS stock_x RENAME TO stock');
     }
+  });
+
+  it('order.paid → reservation COMMITTED: reserved goes down, available stays', async () => {
+    const orderId = await reservedOrder(2);
+    await publish(orderPaid(orderId));
+    await eventually(async () =>
+      expect(await stockOf(A)).toEqual({ available: 3, reserved: 0 }),
+    );
+    expect(await reservationStatus(orderId)).toBe('COMMITTED');
+  });
+
+  it('order.cancelled twice (different event ids) → stock released ONCE', async () => {
+    const orderId = await reservedOrder(2);
+    // Two DIFFERENT events: both pass processed_events, so this proves the
+    // second guard (only RESERVED rows move).
+    await publish(orderCancelled(orderId));
+    await publish(orderCancelled(orderId));
+    // Marker on the same key → same partition → handled after both cancels.
+    await setStock(B, 5);
+    await publish(orderCreated([{ productId: B, quantity: 1 }]), orderId);
+    await eventually(async () =>
+      expect(await stockOf(B)).toEqual({ available: 4, reserved: 1 }),
+    );
+
+    expect(await stockOf(A)).toEqual({ available: 5, reserved: 0 }); // not 7
+    expect(await reservationStatus(orderId)).toBe('RELEASED');
+  });
+
+  it('order.cancelled after order.paid → no stock comes back', async () => {
+    const orderId = await reservedOrder(2);
+    await publish(orderPaid(orderId));
+    const cancel = orderCancelled(orderId);
+    await publish(cancel);
+    await eventually(async () =>
+      expect(await handled(cancel.eventId)).toBe(true),
+    );
+    expect(await stockOf(A)).toEqual({ available: 3, reserved: 0 });
+    expect(await reservationStatus(orderId)).toBe('COMMITTED');
+  });
+
+  it('order.cancelled with no reservation (failed order) → no change', async () => {
+    await setStock(A, 5);
+    const cancel = orderCancelled(randomUUID());
+    await publish(cancel);
+    await eventually(async () =>
+      expect(await handled(cancel.eventId)).toBe(true),
+    );
+    expect(await stockOf(A)).toEqual({ available: 5, reserved: 0 });
   });
 });

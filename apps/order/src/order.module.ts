@@ -18,7 +18,7 @@ import { IdempotencyService } from './idempotency/idempotency.service';
 import { CheckoutService } from './orders/checkout.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
-import { InventoryEventsConsumer } from './saga/inventory-events.consumer';
+import { SagaEventsConsumer } from './saga/saga-events.consumer';
 import { OrderSagaService } from './saga/order-saga.service';
 
 @Module({
@@ -59,7 +59,7 @@ import { OrderSagaService } from './saga/order-saga.service';
     OrdersService,
     IdempotencyService,
     OrderSagaService,
-    InventoryEventsConsumer,
+    SagaEventsConsumer,
   ],
 })
 export class OrderModule {}

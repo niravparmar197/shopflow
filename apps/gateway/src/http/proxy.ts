@@ -4,18 +4,22 @@ import type { Request, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const logger = new Logger('Proxy');
-const TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 5000;
 
 // Identity headers that only the gateway may set, after checking the JWT.
 const IDENTITY_HEADERS = ['x-user-id', 'x-user-role'];
 
-export function proxyTo(target: string) {
+/**
+ * `timeoutMs` must stay above the service's own retry budget, or the client
+ * gets a 504 while the service is still retrying.
+ */
+export function proxyTo(target: string, timeoutMs = DEFAULT_TIMEOUT_MS) {
   return createProxyMiddleware<Request, Response>({
     target,
     changeOrigin: true,
     xfwd: true, // tell the service the real client IP
-    proxyTimeout: TIMEOUT_MS, // max wait for the service to respond
-    timeout: TIMEOUT_MS,
+    proxyTimeout: timeoutMs, // max wait for the service to respond
+    timeout: timeoutMs,
     // Nest mounts middleware on a path, which strips it from req.url.
     // Forward the full original path instead.
     pathRewrite: (_path, req) => req.originalUrl,

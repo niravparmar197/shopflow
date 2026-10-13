@@ -1,4 +1,5 @@
 import { bootstrapService } from '@app/common';
+import { paymentAppOptions } from './app.setup';
 import { PaymentModule } from './payment.module';
 
-void bootstrapService(PaymentModule);
+void bootstrapService(PaymentModule, paymentAppOptions);
