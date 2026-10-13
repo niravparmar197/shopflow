@@ -1,4 +1,4 @@
-import { Type, ValidationPipe } from '@nestjs/common';
+import { INestApplication, Type, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
@@ -9,11 +9,13 @@ import { AllExceptionsFilter } from './filters/all-exceptions.filter';
 export interface BootstrapOptions {
   /** Route prefix such as 'v1'. Health checks stay unprefixed. */
   globalPrefix?: string;
+  /** Service-specific setup (extra middleware etc.), run before listening. */
+  configure?: (app: INestApplication) => void;
 }
 
 export async function bootstrapService(
   rootModule: Type<unknown>,
-  { globalPrefix }: BootstrapOptions = {},
+  { globalPrefix, configure }: BootstrapOptions = {},
 ) {
   const app = await NestFactory.create(rootModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
@@ -32,6 +34,7 @@ export async function bootstrapService(
   );
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
+  configure?.(app);
 
   const config = app.get<ConfigService<Env, true>>(ConfigService);
   const port = config.get('PORT', { infer: true });

@@ -18,6 +18,12 @@ export const envSchema = z.object({
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
 
+  // The user service signs with the private key; everyone verifies with the public one.
+  JWT_PRIVATE_KEY_PATH: z.string().min(1).optional(),
+  JWT_PUBLIC_KEY_PATH: z.string().min(1).optional(),
+  ACCESS_TOKEN_TTL: z.string().min(1).default('15m'),
+  REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(7),
+
   USER_SERVICE_URL: z.string().min(1).optional(),
   PRODUCT_SERVICE_URL: z.string().min(1).optional(),
   ORDER_SERVICE_URL: z.string().min(1).optional(),
