@@ -32,6 +32,12 @@ export class ResilienceRegistry implements OnApplicationShutdown {
     );
   }
 
+  /** Tests only: forget every breaker (the next call starts CLOSED). */
+  clear() {
+    this.executors.forEach((e) => e.shutdown());
+    this.executors.clear();
+  }
+
   onApplicationShutdown() {
     this.executors.forEach((e) => e.shutdown());
   }

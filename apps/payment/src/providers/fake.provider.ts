@@ -91,6 +91,13 @@ export class FakePaymentProvider implements PaymentProvider {
       throw new InvalidSignatureError();
     }
     const body = JSON.parse(raw.toString()) as FakeWebhookBody;
+    // Signed but incomplete → a parse error (400), not a 500 deeper down.
+    if (
+      typeof body.id !== 'string' ||
+      typeof body.providerOrderId !== 'string'
+    ) {
+      throw new Error('Fake webhook needs id and providerOrderId');
+    }
     return body.type === 'payment.succeeded'
       ? {
           kind: 'SUCCEEDED',

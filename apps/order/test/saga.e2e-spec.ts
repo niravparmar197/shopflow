@@ -14,7 +14,8 @@ import { oid, product, startOrderApp } from './helpers';
 const PHONE = oid(1);
 
 // Real order service + PostgreSQL + Redis + Kafka. The test plays the
-// inventory service: it puts stock.* events on Kafka and checks the order.
+// inventory and payment services: it puts stock.* and payment.* events on
+// Kafka and checks the order.
 describe('Order saga (e2e)', () => {
   let ctx: Awaited<ReturnType<typeof startOrderApp>>;
   let ds: DataSource;
@@ -80,6 +81,51 @@ describe('Order saga (e2e)', () => {
       reason: 'OUT_OF_STOCK',
       items: [{ productId: PHONE, requested: 1, available: 0 }],
     });
+
+  const sendPaymentEvent = (ev: object, key: string) =>
+    producer.send({
+      topic: 'payment-events',
+      messages: [{ key, value: JSON.stringify(ev) }],
+    });
+
+  const paymentSucceeded = (orderId: string, userId: string) =>
+    envelope('payment.succeeded', {
+      paymentId: randomUUID(),
+      orderId,
+      userId,
+      amountPaise: 1_000_000,
+      provider: 'fake',
+    });
+
+  const paymentFailed = (orderId: string, userId: string) =>
+    envelope('payment.failed', {
+      paymentId: randomUUID(),
+      orderId,
+      userId,
+      reason: 'PAYMENT_TIMEOUT',
+    });
+
+  /** An order that got its stock: the point where Payment takes over. */
+  async function confirmedOrder() {
+    const orderId = await placeOrder();
+    await sendInventoryEvent(stockReserved(orderId), orderId);
+    await eventually(async () =>
+      expect((await orderOf(orderId)).status).toBe('CONFIRMED'),
+    );
+    const [{ user_id }] = await ds.query<{ user_id: string }[]>(
+      'SELECT user_id FROM orders WHERE id = $1',
+      [orderId],
+    );
+    return { orderId, userId: user_id };
+  }
+
+  const handled = async (eventId: string) =>
+    (
+      await ds.query<unknown[]>(
+        'SELECT 1 FROM processed_events WHERE event_id = $1',
+        [eventId],
+      )
+    ).length === 1;
 
   beforeAll(async () => {
     ctx = await startOrderApp({ kafka: true });
@@ -171,6 +217,45 @@ describe('Order saga (e2e)', () => {
     });
     expect((await orderOf(orderId)).status).toBe('FAILED');
     expect(await outboxCount(orderId, 'order.confirmed')).toBe(0);
+  });
+
+  it('payment.succeeded → PAID + one order.paid', async () => {
+    const { orderId, userId } = await confirmedOrder();
+    const ev = paymentSucceeded(orderId, userId);
+    await sendPaymentEvent(ev, orderId);
+    await sendPaymentEvent(ev, orderId); // redelivered
+    await eventually(async () =>
+      expect((await orderOf(orderId)).status).toBe('PAID'),
+    );
+    // Marker on the same key → handled after the duplicate.
+    const marker = paymentSucceeded(orderId, userId);
+    await sendPaymentEvent(marker, orderId);
+    await eventually(async () =>
+      expect(await handled(marker.eventId)).toBe(true),
+    );
+    expect(await outboxCount(orderId, 'order.paid')).toBe(1);
+  });
+
+  it('payment.failed → CANCELLED + order.cancelled; a later success is ignored', async () => {
+    const { orderId, userId } = await confirmedOrder();
+    await sendPaymentEvent(paymentFailed(orderId, userId), orderId);
+    await eventually(async () =>
+      expect(await orderOf(orderId)).toEqual({
+        status: 'CANCELLED',
+        failure_reason: 'PAYMENT_TIMEOUT',
+      }),
+    );
+    expect(await outboxCount(orderId, 'order.cancelled')).toBe(1);
+
+    // Payment refunds it (it also gets our order.cancelled); the order
+    // stays CANCELLED, and the event is handled, not dead-lettered.
+    const late = paymentSucceeded(orderId, userId);
+    await sendPaymentEvent(late, orderId);
+    await eventually(async () =>
+      expect(await handled(late.eventId)).toBe(true),
+    );
+    expect((await orderOf(orderId)).status).toBe('CANCELLED');
+    expect(await outboxCount(orderId, 'order.paid')).toBe(0);
   });
 
   it('an event for an unknown order → order-svc.dlq', async () => {

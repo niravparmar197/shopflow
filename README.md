@@ -22,12 +22,13 @@ An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservi
 
 Imported via TypeScript path aliases (see `tsconfig.json`).
 
-| Library  | Alias         | Purpose (planned)                       |
-| -------- | ------------- | --------------------------------------- |
-| `common` | `@app/common` | Shared utilities, DTOs, guards, filters |
-| `events` | `@app/events` | Event names and payload contracts       |
-| `kafka`  | `@app/kafka`  | Kafka client/producer/consumer wiring   |
-| `proto`  | `@app/proto`  | gRPC protobuf definitions               |
+| Library      | Alias             | Purpose (planned)                                            |
+| ------------ | ----------------- | ------------------------------------------------------------ |
+| `common`     | `@app/common`     | Shared utilities, DTOs, guards, filters                      |
+| `events`     | `@app/events`     | Event names and payload contracts                            |
+| `kafka`      | `@app/kafka`      | Kafka client/producer/consumer wiring                        |
+| `proto`      | `@app/proto`      | gRPC protobuf definitions                                    |
+| `resilience` | `@app/resilience` | Retry + circuit breaker + timeout for calls to other systems |
 
 ## Project structure
 
@@ -206,11 +207,12 @@ order.created ─▶ Inventory ─┬─▶ stock.reserved ─▶ Order: PENDING
                             └─▶ stock.failed   ─▶ Order: PENDING → FAILED    (+ order.failed)
 ```
 
-| Topic                           | Key          | Events                                                               |
-| ------------------------------- | ------------ | -------------------------------------------------------------------- |
-| `order-events`                  | orderId      | `order.created`, `order.confirmed`, `order.failed`                   |
-| `inventory-events`              | orderId      | `stock.reserved`, `stock.failed`                                     |
-| `<group>.retry` / `<group>.dlq` | original key | failed messages (headers `x-error`, `x-attempt`, `x-original-topic`) |
+| Topic                           | Key          | Events                                                                              |
+| ------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
+| `order-events`                  | orderId      | `order.created`, `order.confirmed`, `order.failed`, `order.paid`, `order.cancelled` |
+| `inventory-events`              | orderId      | `stock.reserved`, `stock.failed`                                                    |
+| `payment-events`                | orderId      | `payment.succeeded`, `payment.failed`, `payment.refunded`                           |
+| `<group>.retry` / `<group>.dlq` | original key | failed messages (headers `x-error`, `x-attempt`, `x-original-topic`)                |
 
 - **Outbox relay** (`libs/kafka`): at-least-once delivery from the outbox table to Kafka, keyed by aggregate id so one order's events stay in order
 - **BaseConsumer** (template method): every consumer records the `eventId` in `processed_events` in the **same transaction** as its change, so duplicates have no effect (exactly-once effect)
@@ -224,6 +226,38 @@ order.created ─▶ Inventory ─┬─▶ stock.reserved ─▶ Order: PENDING
 1. Kafka UI → topic `<group>.dlq` → read the `x-error` and `x-dlq-reason` headers.
 2. Fix the cause (bug, data, config).
 3. `npm run dlq:replay -- <group>` sends the messages back to their original topic (`--include-poison` once a code fix can handle them).
+
+## Payments (F6)
+
+```
+PENDING ──webhook success──► SUCCEEDED ──order.cancelled──► REFUND_PENDING ──► REFUNDED
+   │                                                              ▲
+   └──timeout (sweeper)──► EXPIRED ──late webhook success─────────┘
+```
+
+- **Providers**: `PAYMENT_PROVIDER=fake | razorpay | stripe`. One `PaymentProvider` interface (Strategy), one adapter per provider (Adapter), picked by `PaymentProviderFactory`. `fake` is for dev and tests only and is refused in production.
+- **Checkout**: `POST /v1/payments/:orderId/checkout` returns what the frontend needs to open the provider's checkout. Calling it again resumes the same provider order. Every provider call goes through `@app/resilience`: 2 s timeout per attempt, 2 retries with backoff + jitter (temporary errors only), and a circuit breaker per provider (≥ 50 % of ≥ 5 calls fail → fail fast for 30 s). The gateway allows 10 s for `/v1/payments`, above that ~6.6 s worst case.
+- **Webhooks**: `POST /v1/payments/webhooks/:provider`, no JWT. HMAC over the raw body (wrong → 401); deduplicated by `(provider, event id)` in the same transaction as the change; no per-IP rate limit. A non-2xx (e.g. 503 for an unknown provider order) makes the provider send it again.
+- **A declined card is not a failed payment**: the user can try again until `expires_at` (`PAYMENT_TTL_MINUTES`, 15). Only the expiry is final.
+- **Sweeper** (`PAYMENT_SWEEP_MS`, 30 s, every pod): `FOR UPDATE SKIP LOCKED` expires due payments (→ `payment.failed`) and retries pending refunds. Webhook and sweeper both lock the row first, so a payment ends in exactly one final state; a success that arrives after the expiry is refunded automatically.
+- **Refunds**: a 2-minute lease (`refund_attempted_at`), the provider call outside any transaction, then a conditional `REFUND_PENDING → REFUNDED` (+ `payment.refunded`). The payment id is the provider's idempotency key.
+- Dev only: `POST /v1/payments/dev/fake-mode` (`ok` / `fail` / `slow` / `flaky`) and `GET /v1/payments/dev/circuits`.
+- Tests (`npm run test:e2e:payment`): signatures, dedupe, declined attempts, expiry, late success → refund, refund lease, **webhook vs timeout racing 20×** (always one outcome, one refund per lost race), circuit breaker opening, timeouts, compensation.
+- Decision record: [ADR 0002: payment providers, webhooks, auto-refund](docs/adr/0002-payment-providers-and-refunds.md)
+
+### Saga end to end
+
+**Order owns the order status**: Inventory and Payment react to `order.*` events, never to each other.
+
+| Event                        | Order     | Inventory                       | Payment                            |
+| ---------------------------- | --------- | ------------------------------- | ---------------------------------- |
+| `order.created`              | PENDING   | reserve                         | –                                  |
+| `stock.reserved`             | CONFIRMED | –                               | create payment (`order.confirmed`) |
+| `payment.succeeded`          | PAID      | commit (via `order.paid`)       | –                                  |
+| `payment.failed`             | CANCELLED | release (via `order.cancelled`) | –                                  |
+| `order.cancelled` after paid | –         | – (already sold)                | refund                             |
+
+Compensation is idempotent twice over: `processed_events` drops redelivered events, and only `RESERVED` reservations can be committed or released, so even a second, different cancel event changes nothing.
 
 ## Scripts
 
