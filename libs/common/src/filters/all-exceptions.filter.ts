@@ -1,0 +1,80 @@
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
+
+// Set by pino-http from the x-correlation-id header (see CommonModule).
+function correlationIdOf(req: Request): string {
+  return typeof req.id === 'string' || typeof req.id === 'number'
+    ? String(req.id)
+    : 'unknown';
+}
+
+/** Same shape as AllExceptionsFilter, for plain Express middleware. */
+export function sendError(
+  req: Request,
+  res: Response,
+  status: number,
+  message: string,
+) {
+  if (res.headersSent) return;
+  const payload: ErrorResponse = {
+    code: HttpStatus[status] ?? 'ERROR',
+    message,
+    correlationId: correlationIdOf(req),
+  };
+  res.status(status).json(payload);
+}
+
+export interface ErrorResponse {
+  code: string;
+  message: string;
+  details?: unknown[];
+  correlationId: string;
+}
+
+// Turns every error into one shape: { code, message, details, correlationId }.
+@Catch()
+export class AllExceptionsFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AllExceptionsFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost) {
+    const ctx = host.switchToHttp();
+    const res = ctx.getResponse<Response>();
+    const req = ctx.getRequest<Request>();
+
+    const status =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    const body =
+      exception instanceof HttpException ? exception.getResponse() : null;
+    const message: unknown =
+      typeof body === 'string'
+        ? body
+        : ((body as { message?: unknown } | null)?.message ??
+          'Something went wrong');
+
+    const correlationId = correlationIdOf(req);
+
+    // Log the real error for 500s, but never send its details to the client.
+    if (status >= 500) {
+      this.logger.error({ err: exception, correlationId }, 'Unhandled error');
+    }
+
+    const isValidation = Array.isArray(message);
+    const payload: ErrorResponse = {
+      code: HttpStatus[status] ?? 'ERROR', // e.g. "CONFLICT"
+      message: isValidation ? 'Validation failed' : String(message),
+      details: isValidation ? (message as unknown[]) : undefined,
+      correlationId,
+    };
+    res.status(status).json(payload);
+  }
+}

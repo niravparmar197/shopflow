@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package product;
+
+// Internal contract between the gateway (client) and the product service.
+// Rules: never change or reuse a field number; only add new fields.
+
+service ProductService {
+  rpc GetProduct (GetProductRequest) returns (Product);
+  rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
+  rpc GetProductsByIds (GetProductsByIdsRequest) returns (GetProductsByIdsResponse); // used by order (F3)
+}
+
+message GetProductRequest {
+  string id_or_slug = 1;
+}
+
+message ListProductsRequest {
+  string category = 1;
+  optional int64 min_price = 2;
+  optional int64 max_price = 3;
+  string q = 4;
+  string cursor = 5;
+  int32 limit = 6;
+}
+
+message Product {
+  string id = 1;
+  string name = 2;
+  string slug = 3;
+  string description = 4;
+  string category = 5;
+  int64 price_paise = 6;
+  string currency = 7;
+  repeated string images = 8;
+  int32 version = 9;
+  string created_at = 10;
+  // Free-form per-category attributes ({"ram":"8GB"}), as a JSON object string.
+  string attributes_json = 11;
+}
+
+message ListProductsResponse {
+  repeated Product items = 1;
+  string next_cursor = 2; // empty when there are no more pages
+}
+
+message GetProductsByIdsRequest {
+  repeated string ids = 1;
+}
+
+message GetProductsByIdsResponse {
+  repeated Product items = 1;
+}

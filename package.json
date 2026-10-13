@@ -17,32 +17,67 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/gateway/test/jest-e2e.json"
+    "test:e2e": "npm run test:e2e:user && npm run test:e2e:product",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "migration:generate:user": "npm run typeorm -- migration:generate -d apps/user/src/database/data-source.ts",
+    "migration:run:user": "npm run typeorm -- migration:run -d apps/user/src/database/data-source.ts",
+    "migration:revert:user": "npm run typeorm -- migration:revert -d apps/user/src/database/data-source.ts",
+    "test:e2e:user": "jest --config apps/user/test/jest-e2e.json --runInBand",
+    "seed:product": "ts-node --transpile-only apps/product/src/seed.ts",
+    "proto:gen": "node scripts/proto-gen.js",
+    "test:e2e:product": "jest --config apps/product/test/jest-e2e.json --runInBand"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1150.0",
+    "@aws-sdk/s3-presigned-post": "^3.1150.0",
+    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/proto-loader": "^0.8.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^12.0.1",
     "@nestjs/core": "^11.0.1",
+    "@nestjs/jwt": "^12.0.3",
+    "@nestjs/mapped-types": "^12.0.0",
+    "@nestjs/microservices": "^11.2.7",
+    "@nestjs/mongoose": "^12.0.0",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/terminus": "^12.1.0",
+    "@nestjs/typeorm": "^12.0.2",
+    "bcrypt": "^6.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "cookie-parser": "^1.4.7",
     "helmet": "^8.3.0",
+    "http-proxy-middleware": "^4.2.0",
+    "ioredis": "^5.11.1",
+    "mongoose": "^9.11.2",
     "nestjs-pino": "^5.3.1",
+    "pg": "^8.23.1",
     "pino-http": "^11.0.0",
     "pino-pretty": "^13.2.0",
+    "rate-limiter-flexible": "^11.2.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "typeorm": "^1.1.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@babel/plugin-transform-modules-commonjs": "^7.29.7",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@protobuf-ts/protoc": "^2.11.1",
+    "@testcontainers/mongodb": "^12.2.0",
+    "@testcontainers/postgresql": "^12.2.0",
+    "@testcontainers/redis": "^12.2.0",
+    "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
+    "babel-plugin-transform-import-meta": "^2.3.3",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -54,6 +89,7 @@
     "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
+    "ts-proto": "^2.15.0",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
@@ -67,6 +103,16 @@
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
+      "node_modules.@nestjs.(config|jwt|mapped-types|mongoose|terminus|typeorm).+\\.js$": [
+        "babel-jest",
+        {
+          "plugins": [
+            "./tools/jest/rename-esm-require.js",
+            "babel-plugin-transform-import-meta",
+            "@babel/plugin-transform-modules-commonjs"
+          ]
+        }
+      ],
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
@@ -83,6 +129,15 @@
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
       "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
-    }
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|terminus|typeorm)/)"
+    ]
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "config": {
+    "protocVersion": "36.2"
   }
 }

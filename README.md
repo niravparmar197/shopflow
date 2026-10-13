@@ -2,19 +2,19 @@
 
 An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservices in a single monorepo.
 
-> **Status:** early scaffold. Each service and shared library has been generated with the Nest CLI, but no business logic, messaging, or persistence is implemented yet.
+> **Status:** F1 (auth) is done: signup, login, JWT access tokens and refresh token rotation in the `user` service, behind the `gateway`. The other services are still scaffolds.
 
 ## Services
 
-| Service        | Path                 | Default port | Responsibility (planned)                          |
-| -------------- | -------------------- | ------------ | ------------------------------------------------- |
-| `gateway`      | `apps/gateway`       | 3000         | Public HTTP entry point; routes to other services |
-| `user`         | `apps/user`          | 3001         | Accounts, authentication, profiles                |
-| `product`      | `apps/product`       | 3002         | Product catalog                                   |
-| `inventory`    | `apps/inventory`     | 3003         | Stock levels and reservations                     |
-| `order`        | `apps/order`         | 3004         | Order creation and lifecycle                      |
-| `payment`      | `apps/payment`       | 3005         | Payment processing                                |
-| `notification` | `apps/notification`  | 3006         | Email / SMS / push notifications                  |
+| Service        | Path                | Default port | Responsibility (planned)                          |
+| -------------- | ------------------- | ------------ | ------------------------------------------------- |
+| `gateway`      | `apps/gateway`      | 3000         | Public HTTP entry point; routes to other services |
+| `user`         | `apps/user`         | 3001         | Accounts, authentication, profiles                |
+| `product`      | `apps/product`      | 3002         | Product catalog                                   |
+| `inventory`    | `apps/inventory`    | 3005         | Stock levels and reservations                     |
+| `order`        | `apps/order`        | 3003         | Order creation and lifecycle                      |
+| `payment`      | `apps/payment`      | 3004         | Payment processing                                |
+| `notification` | `apps/notification` | 3006         | Email / SMS / push notifications                  |
 
 `gateway` is the default project, so Nest CLI commands without a project name target it.
 
@@ -22,12 +22,12 @@ An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservi
 
 Imported via TypeScript path aliases (see `tsconfig.json`).
 
-| Library  | Alias          | Purpose (planned)                          |
-| -------- | -------------- | ------------------------------------------ |
-| `common` | `@app/common`  | Shared utilities, DTOs, guards, filters    |
-| `events` | `@app/events`  | Event names and payload contracts          |
-| `kafka`  | `@app/kafka`   | Kafka client/producer/consumer wiring      |
-| `proto`  | `@app/proto`   | gRPC protobuf definitions                  |
+| Library  | Alias         | Purpose (planned)                       |
+| -------- | ------------- | --------------------------------------- |
+| `common` | `@app/common` | Shared utilities, DTOs, guards, filters |
+| `events` | `@app/events` | Event names and payload contracts       |
+| `kafka`  | `@app/kafka`  | Kafka client/producer/consumer wiring   |
+| `proto`  | `@app/proto`  | gRPC protobuf definitions               |
 
 ## Project structure
 
@@ -54,13 +54,24 @@ shopflow/
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22.12+
 - npm
+- Docker (local infrastructure and integration tests)
 
 ### Install
 
 ```bash
 npm install
+```
+
+### Set up locally
+
+```bash
+docker compose -f infra/docker-compose.yml up -d   # Postgres (5434), Redis (6380), MinIO (9002, console 9003), ...
+cp apps/user/.env.example apps/user/.env           # then set USER/PASSWORD in DATABASE_URL (shop/shop locally)
+cp apps/gateway/.env.example apps/gateway/.env
+node scripts/generate-jwt-keys.js                  # writes keys/ (git-ignored)
+npm run migration:run:user
 ```
 
 ### Run a service
@@ -90,18 +101,59 @@ npx nest build gateway        # outputs to dist/apps/gateway
 node dist/apps/gateway/main
 ```
 
+## Auth (F1)
+
+```
+Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
+```
+
+- Signup / login in the User service; passwords hashed with bcrypt (12 rounds)
+- Access token: JWT RS256, 15 min, sent as `Authorization: Bearer`. Only the User service holds the private key; the gateway verifies with the public key
+- Refresh token: random, 7 days, in an httpOnly + `SameSite=Strict` cookie scoped to `/v1/auth`, stored only as a SHA-256 hash
+- Refresh rotation with reuse detection: reusing a spent token revokes its whole family. A row lock serializes concurrent refreshes
+- Gateway: JWT check, correlation id (`x-correlation-id`, logged by every service), Redis rate limits (100/min global, 5/min login), 5 s timeouts, strips client-sent `x-user-*` headers
+- Errors everywhere use one shape: `{ code, message, details?, correlationId }`
+
+| Endpoint                | Auth         | Notes                                   |
+| ----------------------- | ------------ | --------------------------------------- |
+| `POST /v1/auth/signup`  | none         | `{ email, password, name }`             |
+| `POST /v1/auth/login`   | none         | returns `accessToken`, sets `rt` cookie |
+| `POST /v1/auth/refresh` | `rt` cookie  | rotates the cookie, new `accessToken`   |
+| `POST /v1/auth/logout`  | `rt` cookie  | revokes the token family                |
+| `GET /v1/users/me`      | Bearer token | current user                            |
+
+## Products (F2)
+
+```
+Client → Gateway ──gRPC──▶ Product service ──▶ Redis (cache) ──▶ MongoDB
+Admin  → presigned POST ──▶ S3 / MinIO  (server never handles the file)
+```
+
+- Product service: MongoDB catalog (flexible attributes), compound + text indexes
+- Cursor pagination (stable, fast at any depth), max 50 per page
+- Gateway → Product over **gRPC** (proto contract in `libs/proto`), 2 s deadline, error mapping
+- Redis cache-aside: single-flight, TTL jitter, negative cache, versioned list keys, fail-open
+- Optimistic locking with `version` (409 on stale update)
+- Images: S3 presigned POST (5 MB, type locked) → `tmp/` → confirm → `products/`; `tmp/` auto-deleted after 1 day
+- Tests: unit (cache, images with S3 mocked) + integration with real MongoDB + Redis via Testcontainers (`npm run test:e2e:product`), covering pagination, roles, 409s, cache invalidation, concurrent edits and the gRPC contract
+
 ## Scripts
 
-| Command              | Description                              |
-| -------------------- | ---------------------------------------- |
-| `npm run build`      | Build (gateway by default)               |
-| `npm run start:dev`  | Start in watch mode (gateway by default) |
-| `npm run start:prod` | Run the built gateway                    |
-| `npm run lint`       | Lint and auto-fix with ESLint            |
-| `npm run format`     | Format `apps/` and `libs/` with Prettier |
-| `npm test`           | Run unit tests (Jest)                    |
-| `npm run test:cov`   | Run unit tests with coverage             |
-| `npm run test:e2e`   | Run gateway end-to-end tests             |
+| Command                                                                       | Description                                                        |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `npm run build`                                                               | Build (gateway by default)                                         |
+| `npm run start:dev`                                                           | Start in watch mode (gateway by default)                           |
+| `npm run start:prod`                                                          | Run the built gateway                                              |
+| `npm run lint`                                                                | Lint and auto-fix with ESLint                                      |
+| `npm run format`                                                              | Format `apps/` and `libs/` with Prettier                           |
+| `npm test`                                                                    | Run unit tests (Jest)                                              |
+| `npm run test:cov`                                                            | Run unit tests with coverage                                       |
+| `npm run test:e2e`                                                            | Run integration tests (needs Docker)                               |
+| `npm run migration:run:user`                                                  | Apply user service migrations                                      |
+| `npm run migration:generate:user -- apps/user/src/database/migrations/<Name>` | Generate a migration from entity changes                           |
+| `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
+| `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
+| `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
 
