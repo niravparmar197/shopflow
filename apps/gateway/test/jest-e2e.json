@@ -1,0 +1,28 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "../../..",
+  "testRegex": "apps/gateway/test/.*.e2e-spec.ts$",
+  "transform": {
+    "node_modules.@nestjs.(config|jwt|mapped-types|mongoose|schedule|terminus|typeorm).+\\.js$": [
+      "babel-jest",
+      {
+        "plugins": [
+          "./tools/jest/rename-esm-require.js",
+          "babel-plugin-transform-import-meta",
+          "@babel/plugin-transform-modules-commonjs"
+        ]
+      }
+    ],
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "transformIgnorePatterns": [
+    "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|schedule|terminus|typeorm)/)"
+  ],
+  "testEnvironment": "node",
+  "moduleNameMapper": {
+    "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1"
+  },
+  "testTimeout": 120000,
+  "globalSetup": "<rootDir>/apps/gateway/test/e2e-setup.ts",
+  "globalTeardown": "<rootDir>/apps/gateway/test/e2e-teardown.ts"
+}

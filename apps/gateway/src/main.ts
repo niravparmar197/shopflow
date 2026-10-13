@@ -16,7 +16,13 @@ void bootstrapService(GatewayModule, {
       credentials: true, // allow the refresh cookie
       // Request headers (e.g. Idempotency-Key) are allowed by reflecting the
       // preflight; these response headers must be listed for JS to read them.
-      exposedHeaders: ['Idempotent-Replayed', 'x-correlation-id'],
+      exposedHeaders: [
+        'Idempotent-Replayed',
+        'x-correlation-id',
+        'Retry-After',
+        'RateLimit-Limit',
+        'RateLimit-Remaining',
+      ],
     });
   },
 });

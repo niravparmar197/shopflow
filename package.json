@@ -17,7 +17,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "npm run test:e2e:user && npm run test:e2e:product && npm run test:e2e:order && npm run test:e2e:inventory && npm run test:e2e:payment && npm run test:e2e:notification",
+    "test:e2e": "npm run test:e2e:gateway && npm run test:e2e:user && npm run test:e2e:product && npm run test:e2e:order && npm run test:e2e:inventory && npm run test:e2e:payment && npm run test:e2e:notification",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "migration:generate:user": "npm run typeorm -- migration:generate -d apps/user/src/database/data-source.ts",
     "migration:run:user": "npm run typeorm -- migration:run -d apps/user/src/database/data-source.ts",
@@ -40,7 +40,8 @@
     "test:e2e:order": "jest --config apps/order/test/jest-e2e.json --runInBand",
     "test:e2e:inventory": "jest --config apps/inventory/test/jest-e2e.json --runInBand",
     "test:e2e:payment": "jest --config apps/payment/test/jest-e2e.json --runInBand",
-    "test:e2e:notification": "jest --config apps/notification/test/jest-e2e.json --runInBand"
+    "test:e2e:notification": "jest --config apps/notification/test/jest-e2e.json --runInBand",
+    "test:e2e:gateway": "jest --config apps/gateway/test/jest-e2e.json --runInBand"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1150.0",

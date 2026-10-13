@@ -20,6 +20,7 @@ import { ProductClientModule } from '@app/proto';
 import { jwtMiddleware } from './http/jwt.middleware';
 import { proxyTo } from './http/proxy';
 import { createRateLimiter } from './http/rate-limit';
+import { userRateLimit } from './http/user-rate-limit';
 import { ProductsController } from './products/products.controller';
 
 @Module({
@@ -69,6 +70,27 @@ export class GatewayModule implements NestModule {
       'NOTIFICATION_SERVICE_URL',
       { infer: true },
     );
+
+    // Exact per-user limits on expensive WRITES (sliding window, after the
+    // JWT check). Invisible to a real user (idempotency absorbs double
+    // clicks), painful for a buy-script. Layers: global per IP (1), login
+    // per IP (2), these, and the bulkhead in the order service (F9 part 2).
+    const ordersLimit = userRateLimit(this.redis, {
+      name: 'orders',
+      limit: 5,
+      windowMs: 10_000,
+    });
+    const cartLimit = userRateLimit(this.redis, {
+      name: 'cart',
+      limit: 30,
+      windowMs: 10_000,
+      methods: ['POST', 'PATCH', 'DELETE'],
+    });
+    const paymentsLimit = userRateLimit(this.redis, {
+      name: 'checkout',
+      limit: 5,
+      windowMs: 10_000,
+    });
 
     // Provider webhooks: many requests from a few IPs. A 429 would make the
     // provider retry for hours, so they skip the per-IP limit.
@@ -124,17 +146,22 @@ export class GatewayModule implements NestModule {
 
     // 6) Cart and coupons: JWT here, then proxy. The order service checks it
     //    again, takes the user id only from the token, and checks the admin
-    //    role for coupon management.
+    //    role for coupon management. Cart writes get a per-user limit.
+    consumer
+      .apply(jwtMiddleware(this.jwt), cartLimit, proxyTo(orderService))
+      .forRoutes('v1/cart{/*path}');
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
-      .forRoutes('v1/cart{/*path}', 'v1/coupons{/*path}');
+      .forRoutes('v1/coupons{/*path}');
 
     // 7) Orders. Placing one is expensive (gRPC, a transaction), so it gets
-    //    its own limit per user, counted after the JWT check.
+    //    per-user limits, counted after the JWT check: ≤ 5 per 10 s exactly
+    //    (bursts) and ≤ 10 per minute (sustained).
     const placeOrder = { path: 'v1/orders', method: RequestMethod.POST };
     consumer
       .apply(
         jwtMiddleware(this.jwt),
+        ordersLimit,
         createRateLimiter(this.redis, {
           prefix: 'rl:order',
           points: 10,
@@ -163,9 +190,14 @@ export class GatewayModule implements NestModule {
 
     // 10) Payments: JWT here; the payment service checks it again and only
     //     shows the caller's own payments. 10 s timeout: checkout retries
-    //     the provider for up to ~6.6 s (3 × 2 s + backoff).
+    //     the provider for up to ~6.6 s (3 × 2 s + backoff). POSTs (checkout)
+    //     get a per-user limit; the webhooks above don't.
     consumer
-      .apply(jwtMiddleware(this.jwt), proxyTo(paymentService, 10_000))
+      .apply(
+        jwtMiddleware(this.jwt),
+        paymentsLimit,
+        proxyTo(paymentService, 10_000),
+      )
       .exclude(webhooks)
       .forRoutes('v1/payments{/*path}');
 

@@ -21,11 +21,14 @@ export function sendError(
   res: Response,
   status: number,
   message: string,
+  /** A specific code (default: from the status) and extra data. */
+  extra: { code?: string; details?: unknown } = {},
 ) {
   if (res.headersSent) return;
   const payload: ErrorResponse = {
-    code: HttpStatus[status] ?? 'ERROR',
+    code: extra.code ?? HttpStatus[status] ?? 'ERROR',
     message,
+    ...(extra.details === undefined ? {} : { details: extra.details }),
     correlationId: correlationIdOf(req),
   };
   res.status(status).json(payload);
