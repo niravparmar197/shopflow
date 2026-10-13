@@ -122,6 +122,21 @@ Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
 | `POST /v1/auth/logout`  | `rt` cookie  | revokes the token family                |
 | `GET /v1/users/me`      | Bearer token | current user                            |
 
+## Products (F2)
+
+```
+Client → Gateway ──gRPC──▶ Product service ──▶ Redis (cache) ──▶ MongoDB
+Admin  → presigned POST ──▶ S3 / MinIO  (server never handles the file)
+```
+
+- Product service: MongoDB catalog (flexible attributes), compound + text indexes
+- Cursor pagination (stable, fast at any depth), max 50 per page
+- Gateway → Product over **gRPC** (proto contract in `libs/proto`), 2 s deadline, error mapping
+- Redis cache-aside: single-flight, TTL jitter, negative cache, versioned list keys, fail-open
+- Optimistic locking with `version` (409 on stale update)
+- Images: S3 presigned POST (5 MB, type locked) → `tmp/` → confirm → `products/`; `tmp/` auto-deleted after 1 day
+- Tests: unit (cache, images with S3 mocked) + integration with real MongoDB + Redis via Testcontainers (`npm run test:e2e:product`), covering pagination, roles, 409s, cache invalidation, concurrent edits and the gRPC contract
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |

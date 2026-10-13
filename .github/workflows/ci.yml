@@ -41,6 +41,10 @@ jobs:
       - name: Integration tests (user)
         run: npm run test:e2e:user
 
+      # Starts real MongoDB + Redis; also exercises the gRPC contract.
+      - name: Integration tests (product)
+        run: npm run test:e2e:product
+
       - name: Build all services
         run: |
           for app in gateway user product order payment inventory notification; do
