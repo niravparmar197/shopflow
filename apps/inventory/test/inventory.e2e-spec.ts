@@ -7,6 +7,7 @@ import {
   header,
   readTopic,
 } from '../../../test/helpers/kafka';
+import { ReservationExpiryJob } from '../src/jobs/reservation-expiry.job';
 import { startInventoryApp } from './helpers';
 
 const A = 'a'.repeat(24);
@@ -367,5 +368,80 @@ describe('Inventory (e2e)', () => {
       expect(await handled(cancel.eventId)).toBe(true),
     );
     expect(await stockOf(A)).toEqual({ available: 5, reserved: 0 });
+  });
+
+  it('expired holds → released once even when 2 runs race; fresh holds untouched', async () => {
+    await setStock(A, 10);
+    const oldOrder = orderCreated([{ productId: A, quantity: 3 }]);
+    const newOrder = orderCreated([{ productId: A, quantity: 2 }]);
+    await publish(oldOrder);
+    await publish(newOrder);
+    await eventually(async () =>
+      expect(await stockOf(A)).toEqual({ available: 5, reserved: 5 }),
+    );
+    await ds.query(
+      `UPDATE reservations SET expires_at = now() - interval '1 minute' WHERE order_id = $1`,
+      [oldOrder.data.orderId],
+    );
+
+    // Two runs at once (e.g. the lock failed): SKIP LOCKED gives the row to one.
+    const job = ctx.app.get(ReservationExpiryJob);
+    const [a, b] = await Promise.all([job.releaseBatch(), job.releaseBatch()]);
+    expect(a + b).toBe(1);
+
+    expect(await stockOf(A)).toEqual({ available: 8, reserved: 2 });
+    expect(await reservationStatus(oldOrder.data.orderId)).toBe('RELEASED');
+    expect(await reservationStatus(newOrder.data.orderId)).toBe('RESERVED');
+    // One audit event, with the reason.
+    const [audit] = await ds.query<{ payload: { data: unknown } }[]>(
+      `SELECT payload FROM outbox WHERE aggregate_id = $1 AND event_type = 'stock.released'`,
+      [oldOrder.data.orderId],
+    );
+    expect(audit.payload.data).toEqual({
+      orderId: oldOrder.data.orderId,
+      reason: 'HOLD_EXPIRED',
+      items: [{ productId: A, quantity: 3 }],
+    });
+
+    expect(await job.releaseBatch()).toBe(0); // nothing left; the fresh hold stays
+  });
+
+  it('a hold is 60 minutes (longer than an order can live)', async () => {
+    await setStock(A, 5);
+    const ev = orderCreated([{ productId: A, quantity: 1 }]);
+    await publish(ev);
+    await eventually(async () =>
+      expect(await reservationStatus(ev.data.orderId)).toBe('RESERVED'),
+    );
+    const [{ minutes }] = await ds.query<{ minutes: number }[]>(
+      `SELECT round(extract(epoch FROM expires_at - created_at) / 60)::int AS minutes
+         FROM reservations WHERE order_id = $1`,
+      [ev.data.orderId],
+    );
+    expect(minutes).toBe(60);
+  });
+
+  it('order.paid with no reservation left → ALERT, stock untouched', async () => {
+    await setStock(A, 5);
+    const ev = orderCreated([{ productId: A, quantity: 2 }]);
+    await publish(ev);
+    await eventually(async () =>
+      expect(await stockOf(A)).toEqual({ available: 3, reserved: 2 }),
+    );
+    // The contract broken on purpose: the hold ended before the payment.
+    await ds.query(
+      `UPDATE reservations SET expires_at = now() - interval '1 minute' WHERE order_id = $1`,
+      [ev.data.orderId],
+    );
+    expect(await ctx.app.get(ReservationExpiryJob).releaseBatch()).toBe(1);
+
+    const paid = orderPaid(ev.data.orderId);
+    await publish(paid);
+    await eventually(async () =>
+      expect(await handled(paid.eventId)).toBe(true),
+    );
+    // Nothing committed (reserved must not go negative): a human checks.
+    expect(await stockOf(A)).toEqual({ available: 5, reserved: 0 });
+    expect(await reservationStatus(ev.data.orderId)).toBe('RELEASED');
   });
 });

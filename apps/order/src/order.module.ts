@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, Env, RedisModule } from '@app/common';
 import { KafkaModule } from '@app/kafka';
@@ -15,6 +16,7 @@ import { CouponsService } from './coupons/coupons.service';
 import { OrderHistoryService } from './coupons/order-history.service';
 import { ORDER_ENTITIES } from './database/entities';
 import { IdempotencyService } from './idempotency/idempotency.service';
+import { JobsModule } from './jobs/jobs.module';
 import { CheckoutService } from './orders/checkout.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
@@ -38,6 +40,8 @@ import { OrderSagaService } from './saga/order-saga.service';
     KafkaModule.forRoot(), // outbox writer + relay to Kafka
     RedisModule, // carts
     ProductClientModule, // live prices over gRPC
+    ScheduleModule.forRoot(), // cron registry for the scheduled jobs
+    JobsModule,
     // Public key only: this service checks tokens but never creates them.
     JwtModule.registerAsync({
       inject: [ConfigService],

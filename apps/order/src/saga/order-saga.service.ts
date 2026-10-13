@@ -41,6 +41,7 @@ export class OrderSagaService {
   ) {
     const order = await this.lockOrder(m, data.orderId);
     if (!this.tryApply(order, 'confirm')) return;
+    order.confirmedAt = new Date();
 
     await m.getRepository(Order).save(order);
     await this.outbox.add<OrderConfirmedV1>(m, {
@@ -139,8 +140,9 @@ export class OrderSagaService {
    * An impossible move means a late or out-of-order event (say the order
    * was already cancelled). Throwing would only retry it into the DLQ, so
    * log it and move on.
-   * Known gap (F8): stock.reserved for an already-cancelled order leaves the
-   * stock held until the expiry job releases it.
+   * E.g. stock.reserved for an order the expiry job already cancelled: it's
+   * ignored here, and inventory releases the stock when it reads our
+   * order.cancelled (same key, so it comes after the reserve).
    */
   private tryApply(order: Order, action: OrderAction): boolean {
     try {

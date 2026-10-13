@@ -56,6 +56,7 @@ export default async function setup() {
     KAFKA_BROKERS: '127.0.0.1:1',
     OUTBOX_RELAY_ENABLED: 'false',
     KAFKA_CONSUMERS_ENABLED: 'false',
+    JOBS_ENABLED: 'false', // the tests call tick() themselves
   });
 
   // Handed to e2e-teardown.ts (same process).

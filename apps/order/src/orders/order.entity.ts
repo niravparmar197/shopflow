@@ -15,6 +15,14 @@ import { OrderAction, OrderStatus } from './order-status';
 
 @Entity('orders')
 @Index('idx_orders_user_created', ['userId', 'createdAt']) // "my orders", newest first
+// Partial indexes for the expiry job: it scans only open orders, never the
+// (many more) finished ones.
+@Index('idx_orders_pending_created', ['createdAt'], {
+  where: `"status" = 'PENDING'`,
+})
+@Index('idx_orders_confirmed_at', ['confirmedAt'], {
+  where: `"status" = 'CONFIRMED'`,
+})
 @Check('chk_orders_amounts', '"discount_paise" >= 0 AND "total_paise" >= 0')
 export class Order {
   @PrimaryGeneratedColumn('uuid')
@@ -59,6 +67,11 @@ export class Order {
     nullable: true,
   })
   customerEmail!: string | null;
+
+  // When it became CONFIRMED: the payment window counts from here.
+  // (updated_at changes on every update, so it can't be used.)
+  @Column({ name: 'confirmed_at', type: 'timestamptz', nullable: true })
+  confirmedAt!: Date | null;
 
   @Column({ type: 'varchar', length: 3, default: 'INR' })
   currency!: string;

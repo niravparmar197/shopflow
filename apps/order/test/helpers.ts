@@ -82,28 +82,44 @@ export async function startOrderApp(opts: { kafka?: boolean } = {}) {
   });
 
   const catalog = new FakeCatalog();
-  const moduleRef = await Test.createTestingModule({ imports: [OrderModule] })
-    .overrideProvider(CatalogClient)
-    .useValue(catalog)
-    .compile();
-  const app = moduleRef.createNestApplication<INestApplication<App>>({
-    bufferLogs: true,
-  });
-  app.useLogger(app.get(Logger)); // as in main.ts; silent under NODE_ENV=test
-  configureApp(app, orderAppOptions); // same setup as main.ts
-  // Listen once on a free port. Otherwise supertest starts the server for
-  // every request, which parallel requests would overdo.
-  await app.listen(0, '127.0.0.1');
+  const createInstance = async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [OrderModule] })
+      .overrideProvider(CatalogClient)
+      .useValue(catalog)
+      .compile();
+    const instance = moduleRef.createNestApplication<INestApplication<App>>({
+      bufferLogs: true,
+    });
+    instance.useLogger(instance.get(Logger)); // as in main.ts; silent in tests
+    configureApp(instance, orderAppOptions); // same setup as main.ts
+    // Listen once on a free port. Otherwise supertest starts the server for
+    // every request, which parallel requests would overdo.
+    await instance.listen(0, '127.0.0.1');
+    return instance;
+  };
+
+  const app = await createInstance();
+  const extra: INestApplication[] = [];
 
   return {
     app,
     catalog,
+    /**
+     * Another copy of the order service on the SAME PostgreSQL and Redis,
+     * like a second pod. Closed by close().
+     */
+    spawn: async () => {
+      const instance = await createInstance();
+      extra.push(instance);
+      return instance;
+    },
     brokers: kafka?.brokers ?? [],
     http: () => request(app.getHttpServer()),
     bearer: (sub: string, role = 'customer') =>
       `Bearer ${signer.sign({ sub, email: `${sub}@test.dev`, role })}`,
-    /** Stops the app, then its Kafka (if any). */
+    /** Stops the app (and its spawned copies), then its Kafka (if any). */
     close: async () => {
+      await Promise.all(extra.map((i) => i.close()));
       await app.close();
       await kafka?.container.stop();
     },

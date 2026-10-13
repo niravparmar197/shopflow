@@ -29,3 +29,17 @@ export const StockFailedV1Schema = z.object({
   ),
 });
 export type StockFailedV1 = z.infer<typeof StockFailedV1Schema>;
+
+// An audit event: why stock went back on sale. No consumer yet (F10 makes
+// it a metric). ORDER_CANCELLED is for the normal path, later.
+export const StockReleasedV1Schema = z.object({
+  orderId: z.uuid(),
+  reason: z.enum(['ORDER_CANCELLED', 'HOLD_EXPIRED']),
+  items: z.array(
+    z.object({
+      productId: z.string().min(1),
+      quantity: z.number().int().positive(),
+    }),
+  ),
+});
+export type StockReleasedV1 = z.infer<typeof StockReleasedV1Schema>;

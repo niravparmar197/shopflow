@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, Env } from '@app/common';
+import { CommonModule, Env, RedisModule } from '@app/common';
 import { KafkaModule } from '@app/kafka';
 import { INVENTORY_ENTITIES } from './database/entities';
+import { ReservationExpiryJob } from './jobs/reservation-expiry.job';
 import { OrderEventsConsumer } from './reservations/order-events.consumer';
 import { ReservationService } from './reservations/reservation.service';
 import { StockController } from './stock/stock.controller';
@@ -25,6 +27,8 @@ import { StockController } from './stock/stock.controller';
     }),
     TypeOrmModule.forFeature(INVENTORY_ENTITIES),
     KafkaModule.forRoot(), // outbox writer + relay; consumers use its client
+    RedisModule, // the scheduled jobs' lock
+    ScheduleModule.forRoot(),
     // Public key only: this service checks tokens but never creates them.
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -36,6 +40,6 @@ import { StockController } from './stock/stock.controller';
     }),
   ],
   controllers: [StockController],
-  providers: [ReservationService, OrderEventsConsumer],
+  providers: [ReservationService, OrderEventsConsumer, ReservationExpiryJob],
 })
 export class InventoryModule {}
