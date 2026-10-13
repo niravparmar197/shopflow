@@ -3,7 +3,7 @@
   "rootDir": "../../..",
   "testRegex": "apps/user/test/.*\\.e2e-spec\\.ts$",
   "transform": {
-    "node_modules.@nestjs.(config|jwt|terminus|typeorm).+\\.js$": [
+    "node_modules.@nestjs.(config|jwt|mapped-types|mongoose|terminus|typeorm).+\\.js$": [
       "babel-jest",
       {
         "plugins": [
@@ -16,7 +16,7 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "transformIgnorePatterns": [
-    "node_modules/(?!@nestjs/(config|jwt|terminus|typeorm)/)"
+    "node_modules/(?!@nestjs/(config|jwt|mapped-types|mongoose|terminus|typeorm)/)"
   ],
   "testEnvironment": "node",
   "moduleNameMapper": {

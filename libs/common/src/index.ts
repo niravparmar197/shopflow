@@ -6,3 +6,5 @@ export * from './bootstrap';
 export * from './filters/all-exceptions.filter';
 export * from './auth/jwt-auth.guard';
 export * from './auth/current-user.decorator';
+export * from './auth/roles.decorator';
+export * from './auth/roles.guard';
