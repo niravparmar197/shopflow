@@ -1,22 +1,34 @@
 # ShopFlow
 
-An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservices in a single monorepo.
+Event-driven e-commerce backend: 6 NestJS microservices + API gateway,
+gRPC, Kafka (saga + outbox), PostgreSQL, MongoDB, Redis, deployed on AWS.
 
-> **Status:** early scaffold. Each service and shared library has been generated with the Nest CLI, but no business logic, messaging, or persistence is implemented yet.
+## Run locally
+```bash
+cd infra && docker compose up -d
+npm install
+npm run start:dev gateway
+```
 
-## Services
+Each service reads its config from `apps/<service>/.env`. Copy `apps/<service>/.env.example` to `.env` and fill in the credentials first.
 
-| Service        | Path                 | Default port | Responsibility (planned)                          |
-| -------------- | -------------------- | ------------ | ------------------------------------------------- |
-| `gateway`      | `apps/gateway`       | 3000         | Public HTTP entry point; routes to other services |
-| `user`         | `apps/user`          | 3001         | Accounts, authentication, profiles                |
-| `product`      | `apps/product`       | 3002         | Product catalog                                   |
-| `inventory`    | `apps/inventory`     | 3003         | Stock levels and reservations                     |
-| `order`        | `apps/order`         | 3004         | Order creation and lifecycle                      |
-| `payment`      | `apps/payment`       | 3005         | Payment processing                                |
-| `notification` | `apps/notification`  | 3006         | Email / SMS / push notifications                  |
+Every service exposes `GET /health/live` and `GET /health/ready`.
 
-`gateway` is the default project, so Nest CLI commands without a project name target it.
+## Ports
+| Service | Port |
+|---|---|
+| gateway | 3000 |
+| user | 3001 |
+| product | 3002 |
+| order | 3003 |
+| payment | 3004 |
+| inventory | 3005 |
+| notification | 3006 |
+| Kafka UI | 8081 |
+| Grafana | 3010 |
+| Prometheus | 9091 |
+| Jaeger | 16686 |
+| Mailpit | 8025 |
 
 ## Shared libraries
 
@@ -24,7 +36,7 @@ Imported via TypeScript path aliases (see `tsconfig.json`).
 
 | Library  | Alias          | Purpose (planned)                          |
 | -------- | -------------- | ------------------------------------------ |
-| `common` | `@app/common`  | Shared utilities, DTOs, guards, filters    |
+| `common` | `@app/common`  | Env validation, logging, health checks, bootstrap |
 | `events` | `@app/events`  | Event names and payload contracts          |
 | `kafka`  | `@app/kafka`   | Kafka client/producer/consumer wiring      |
 | `proto`  | `@app/proto`   | gRPC protobuf definitions                  |
@@ -50,46 +62,6 @@ shopflow/
 └── package.json
 ```
 
-## Getting started
-
-### Prerequisites
-
-- Node.js 20+
-- npm
-
-### Install
-
-```bash
-npm install
-```
-
-### Run a service
-
-Pass the project name to the Nest CLI:
-
-```bash
-npx nest start gateway --watch
-```
-
-Each service listens on its default port from the table above, so several can run side by side. Override it with the `PORT` environment variable:
-
-```bash
-# bash
-PORT=4001 npx nest start user --watch
-```
-
-```powershell
-# PowerShell
-$env:PORT=4001; npx nest start user --watch
-```
-
-### Build
-
-```bash
-npx nest build gateway        # outputs to dist/apps/gateway
-node dist/apps/gateway/main
-```
-
 ## Scripts
 
 | Command              | Description                              |
@@ -104,7 +76,3 @@ node dist/apps/gateway/main
 | `npm run test:e2e`   | Run gateway end-to-end tests             |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
-
-## License
-
-UNLICENSED — private project.
