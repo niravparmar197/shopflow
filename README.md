@@ -29,6 +29,7 @@ Imported via TypeScript path aliases (see `tsconfig.json`).
 | `kafka`      | `@app/kafka`      | Kafka client/producer/consumer wiring                        |
 | `proto`      | `@app/proto`      | gRPC protobuf definitions                                    |
 | `resilience` | `@app/resilience` | Retry + circuit breaker + timeout for calls to other systems |
+| `scheduler`  | `@app/scheduler`  | Redis lock + LeaderJob base for scheduled jobs on many pods  |
 
 ## Project structure
 
@@ -283,6 +284,36 @@ BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SM
 - **No replay on deploy**: the consumer group starts from now (`fromBeginning = false`), so a new deploy doesn't email customers about old orders.
 - **Ops**: Mailpit at http://localhost:8025, Bull Board at http://localhost:3006/v1/queues (dev only: it can retry and delete jobs), and `GET /v1/notifications?orderId=` (admin) shows what was sent.
 - Tests (`npm run test:e2e:notification`): projection, one email per event (×3 duplicates), every template, HTML escaping, SMTP down → 4 attempts → `FAILED` → retry → `SENT`, flaky → `SENT`, SMTP 550 → `FAILED` after 1 attempt, no email address, unknown order → DLQ, admin-only log endpoint.
+
+## Scheduled jobs (F8)
+
+| Job                  | Service   | When (UTC)          | What                                                                                               |
+| -------------------- | --------- | ------------------- | -------------------------------------------------------------------------------------------------- |
+| `order-expiry`       | order     | every minute at :00 | PENDING > 10 min → CANCELLED (`STOCK_TIMEOUT`); CONFIRMED > 30 min → CANCELLED (`PAYMENT_TIMEOUT`) |
+| `reservation-expiry` | inventory | every minute at :30 | holds past their 60 min expiry → released (+ `stock.released`, `HOLD_EXPIRED`)                     |
+| `order-housekeeping` | order     | hourly at :15       | deletes outbox rows published > 7 days ago, `processed_events` > 14 days, idempotency keys > 1 day |
+| payment sweeper      | payment   | every 30 s          | expires PENDING payments, retries refunds (every pod runs it; `SKIP LOCKED` splits the rows)       |
+
+An expired order needs nothing else: its `order.cancelled` makes inventory release the stock, payment close or refund, and notification send the email.
+
+**Safe with many pods** (`libs/scheduler`, `LeaderJob`):
+
+- **Efficiency: a Redis lock** per job, so one pod runs each tick. `SET NX PX` (atomic, with a TTL, so a crashed holder can't block it forever), an owner token, and Lua compare-and-renew / compare-and-release (a slow pod can't free someone else's lock). A heartbeat renews it at TTL/3; if renewal fails, `ctx.lost` tells the job to stop after the current batch. After a run the lock is kept until 1 s before the next tick: pods' timers fire a few ms apart, and a freed lock would let a late pod run the same tick again. A `running` flag stops overlap inside one pod.
+- **Correctness: the database.** Every change is made in small batches with `FOR UPDATE SKIP LOCKED` and the order state machine, so even two pods running at once (lock lost to a GC pause, a network split) change each row once.
+- Crons have 6 fields (seconds first) and run in UTC. `JOBS_ENABLED=false` turns them off (tests call `tick()` themselves); `*_CRON` env vars override the schedules.
+
+**Timing contract**: the timers must nest, or a service acts on stale state:
+
+```
+payment TTL (15 min)  <  order CONFIRMED timeout (30 min)    payment decides; order is the backstop
+order max life (10 + 30 = 40 min)  <  reservation hold (60 min)    stock is never released for an order that can still be paid
+```
+
+If the hold ever ends first anyway, paying that order logs `ALERT: order … is PAID but has no RESERVED reservation`.
+
+Tests (`npm run test:e2e:order`, `npm run test:e2e:inventory`): **3 copies of the order service** run the expiry job together and cancel each of 300 stale orders exactly once; the same **without the lock** (DB fencing alone); only stale orders are touched; one of 3 simultaneous ticks runs; overlap in one pod; renewal on a job longer than the TTL; takeover after a crashed holder; a stolen lock stops the job without deleting the new owner's lock; two racing hold-expiry runs release once.
+
+Decision record: [ADR 0003: Redis lock for efficiency, database for correctness](docs/adr/0003-distributed-locks.md)
 
 ## Scripts
 
