@@ -9,7 +9,8 @@ import {
   type StockReleasedV1,
   type StockReservedV1,
 } from '@app/events';
-import { OutboxService } from '@app/kafka';
+import { type AfterCommit, OutboxService } from '@app/kafka';
+import { FlashSaleService } from '../flash/flash-sale.service';
 import { Stock } from '../stock/stock.entity';
 import { Reservation, ReservationStatus } from './reservation.entity';
 
@@ -25,6 +26,7 @@ export class ReservationService {
 
   constructor(
     private readonly outbox: OutboxService,
+    private readonly flash: FlashSaleService,
     config: ConfigService<Env, true>,
   ) {
     // MUST be longer than an order's max life (10 + 30 min), or we could
@@ -41,7 +43,7 @@ export class ReservationService {
     m: EntityManager,
     order: OrderCreatedV1,
     correlationId?: string,
-  ) {
+  ): Promise<AfterCommit | void> {
     const lines = mergeAndSort(order.items);
 
     // If a product is short, undo only the stock changes made so far; the
@@ -95,7 +97,9 @@ export class ReservationService {
       this.logger.warn(
         `Order ${order.orderId}: out of stock for ${short.productId}`,
       );
-      return;
+      // The flash gate said yes but the DB (the final judge) said no: give
+      // the buyer's tokens back, so the gate doesn't undersell.
+      return this.returnFlashTokens(order.userId, lines);
     }
     await m.query('RELEASE SAVEPOINT reserve');
 
@@ -150,8 +154,15 @@ export class ReservationService {
     );
   }
 
-  /** order.cancelled → COMPENSATION: the stock goes back on sale. */
-  async release(m: EntityManager, orderId: string) {
+  /**
+   * order.cancelled → COMPENSATION: the stock goes back on sale, and so do
+   * any flash-sale tokens (after commit).
+   */
+  async release(
+    m: EntityManager,
+    orderId: string,
+    userId: string,
+  ): Promise<AfterCommit | void> {
     const lines = await this.moveReservations(
       m,
       orderId,
@@ -161,6 +172,19 @@ export class ReservationService {
     this.logger.log(
       `Order ${orderId}: released ${lines.length} reservation(s)`,
     );
+    if (lines.length) return this.returnFlashTokens(userId, lines);
+  }
+
+  /**
+   * Redis isn't part of the DB transaction: done AFTER the commit, once. A
+   * no-op for products not on sale, or a user holding no token.
+   */
+  private returnFlashTokens(userId: string, lines: Line[]): AfterCommit {
+    return async () => {
+      for (const l of lines) {
+        await this.flash.release(l.productId, userId, l.quantity);
+      }
+    };
   }
 
   /**

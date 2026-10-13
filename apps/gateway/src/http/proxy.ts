@@ -18,8 +18,11 @@ export function proxyTo(target: string, timeoutMs = DEFAULT_TIMEOUT_MS) {
     target,
     changeOrigin: true,
     xfwd: true, // tell the service the real client IP
-    proxyTimeout: timeoutMs, // max wait for the service to respond
-    timeout: timeoutMs,
+    // Max wait for the service; past it the error handler below answers 504.
+    // (Not `timeout`: that one sets a timer on the CLIENT's socket and just
+    // destroys it, so under load clients got a dropped connection instead
+    // of a 504, and the request was aborted mid-way downstream.)
+    proxyTimeout: timeoutMs,
     // Nest mounts middleware on a path, which strips it from req.url.
     // Forward the full original path instead.
     pathRewrite: (_path, req) => req.originalUrl,

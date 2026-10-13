@@ -315,6 +315,32 @@ Tests (`npm run test:e2e:order`, `npm run test:e2e:inventory`): **3 copies of th
 
 Decision record: [ADR 0003: Redis lock for efficiency, database for correctness](docs/adr/0003-distributed-locks.md)
 
+## Flash sale (F9)
+
+```
+1,000 clicks → gateway: per-user sliding-window limit (Redis ZSET + Lua) ──► 429 RATE_LIMITED + Retry-After
+             → order: bulkhead (50 in flight, 200 waiting) ──────────────────► 429 SERVER_BUSY (load shedding)
+             → inventory: Redis Lua gate (stock + 1 per user) ───────────────► 409 SOLD_OUT in ~1 ms
+             → winners only: pricing, order, Kafka → DB atomic reserve (the FINAL judge, unchanged since F5)
+```
+
+- **Rate limit** (gateway): exact per-user limits on writes: orders 5/10 s, cart writes 30/10 s, payment POSTs 5/10 s; keyed by the verified JWT subject; Redis's clock; fails open. The per-IP global limit (`RATE_LIMIT_GLOBAL_PER_MIN`, 100) stays for everything else.
+- **Gate** (inventory owns it, `inv:flash:*`): admin `POST /v1/inventory/flash-sales` starts a sale (≤ stock; no restart while running). Order asks `/v1/internal/flash-sales/acquire` (service token; never routed by the gateway) **before pricing**, so a loser costs no gRPC call and no transaction. Tokens go back after commit when the order is cancelled, when the DB reserve fails, or when checkout fails after the gate. Release is idempotent.
+- **Bulkhead** (`libs/resilience`): caps concurrent gate calls; full → 429 `SERVER_BUSY` with `Retry-After`. Circuit breaker = "is it broken?"; bulkhead = "are we sending too much?".
+- **Failure directions**: the gate down → fail open (the DB still prevents overselling); a lost token return → undersell by one, never oversell.
+- Tests: `npm run test:e2e:gateway` (100 concurrent hits → exactly the limit), `npm run test:e2e:inventory` (100 buyers → exactly 10 tokens, idempotent release, tokens back on cancel / DB failure, internal token).
+
+### Load test (k6)
+
+See [load-tests/README.md](load-tests/README.md). On one Windows laptop running every service: **the verified run confirmed exactly 10 of 1,000 buyers, every request was answered with 0 5xx, and stock never went negative in any run**; but buy p95 was ~8 s (target 800 ms), some buyers failed open past the gate when the overloaded order service let the 500 ms gate timeout expire, and same-millisecond bursts overflow Windows' listen queue. The order service is CPU-bound, mostly in Windows socket syscalls; the next measurement belongs on Linux.
+
+### Back-of-the-envelope (estimates, not measurements)
+
+- Redis gate: one Lua call ≈ 0.1 ms → one Redis node ≈ 50–100k gate checks/s.
+- Order service: measured here ≈ 150–250 checkout attempts/s per process on Windows (~10 ms CPU each); on Linux expect several times that. 10 pods ≈ low thousands/s.
+- Winners only reach Postgres: 10 orders × ~5 ms. Without the gate: 1,000 transactions + 1,000 events + 990 failure emails.
+- 1M users clicking within 10 s ≈ 100k req/s → autoscaled gateway and order pods, a Redis cluster, and at that size a **virtual waiting room** (queue tokens) in front of checkout.
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |

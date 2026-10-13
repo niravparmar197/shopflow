@@ -37,6 +37,11 @@ jobs:
       - name: Unit tests
         run: npm test -- --passWithNoTests
 
+      # Real Redis: the per-user sliding-window limiter is atomic (100
+      # requests at once → exactly the limit), slides, expires, fails open.
+      - name: Integration tests (gateway)
+        run: npm run test:e2e:gateway
+
       # Starts a real PostgreSQL with Testcontainers (Docker is preinstalled).
       - name: Integration tests (user)
         run: npm run test:e2e:user

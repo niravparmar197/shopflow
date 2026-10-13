@@ -21,11 +21,14 @@ export function sendError(
   res: Response,
   status: number,
   message: string,
+  /** A specific code (default: from the status) and extra data. */
+  extra: { code?: string; details?: unknown } = {},
 ) {
   if (res.headersSent) return;
   const payload: ErrorResponse = {
-    code: HttpStatus[status] ?? 'ERROR',
+    code: extra.code ?? HttpStatus[status] ?? 'ERROR',
     message,
+    ...(extra.details === undefined ? {} : { details: extra.details }),
     correlationId: correlationIdOf(req),
   };
   res.status(status).json(payload);
@@ -83,6 +86,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : (body as { details?: unknown } | null)?.details,
       correlationId,
     };
+    // An error that says when to retry (e.g. 429 SERVER_BUSY) also gets the
+    // standard header, which clients and load tools understand.
+    const retryAfterSec = (payload.details as { retryAfterSec?: unknown })
+      ?.retryAfterSec;
+    if (typeof retryAfterSec === 'number' && retryAfterSec > 0) {
+      res.setHeader('Retry-After', Math.ceil(retryAfterSec));
+    }
     res.status(status).json(payload);
   }
 }
