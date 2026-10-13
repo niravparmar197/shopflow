@@ -9,7 +9,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import type Redis from 'ioredis';
-import { CommonModule, Env, REDIS, RedisModule } from '@app/common';
+import {
+  type AuthenticatedRequest,
+  CommonModule,
+  Env,
+  REDIS,
+  RedisModule,
+} from '@app/common';
 import { ProductClientModule } from '@app/proto';
 import { jwtMiddleware } from './http/jwt.middleware';
 import { proxyTo } from './http/proxy';
@@ -51,6 +57,9 @@ export class GatewayModule implements NestModule {
       infer: true,
     });
     const orderService = this.config.getOrThrow('ORDER_SERVICE_URL', {
+      infer: true,
+    });
+    const inventoryService = this.config.getOrThrow('INVENTORY_SERVICE_URL', {
       infer: true,
     });
 
@@ -105,5 +114,32 @@ export class GatewayModule implements NestModule {
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
       .forRoutes('v1/cart{/*path}', 'v1/coupons{/*path}');
+
+    // 7) Orders. Placing one is expensive (gRPC, a transaction), so it gets
+    //    its own limit per user, counted after the JWT check.
+    const placeOrder = { path: 'v1/orders', method: RequestMethod.POST };
+    consumer
+      .apply(
+        jwtMiddleware(this.jwt),
+        createRateLimiter(this.redis, {
+          prefix: 'rl:order',
+          points: 10,
+          durationSec: 60,
+          message: 'Too many orders, try again later',
+          key: (req) => (req as AuthenticatedRequest).user.sub,
+        }),
+        proxyTo(orderService),
+      )
+      .forRoutes(placeOrder);
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
+      .exclude(placeOrder)
+      .forRoutes('v1/orders{/*path}');
+
+    // 8) Inventory (admin stock management): JWT here, the inventory
+    //    service checks the admin role.
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(inventoryService))
+      .forRoutes('v1/inventory{/*path}');
   }
 }

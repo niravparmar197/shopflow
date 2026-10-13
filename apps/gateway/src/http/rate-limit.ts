@@ -11,6 +11,8 @@ export interface RateLimitOptions {
   points: number; // allowed requests
   durationSec: number; // per this many seconds
   message: string;
+  /** What to count per; defaults to the client IP. */
+  key?: (req: Request) => string;
 }
 
 // Counters live in Redis, so the limit holds across every gateway instance.
@@ -24,7 +26,8 @@ export function createRateLimiter(redis: Redis, opts: RateLimitOptions) {
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await limiter.consume(req.ip ?? 'unknown');
+      const key = opts.key?.(req) ?? req.ip ?? 'unknown';
+      const result = await limiter.consume(key);
       res.setHeader('X-RateLimit-Limit', opts.points);
       res.setHeader('X-RateLimit-Remaining', result.remainingPoints);
       next();

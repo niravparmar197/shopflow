@@ -21,6 +21,8 @@
   "testEnvironment": "node",
   "moduleNameMapper": {
     "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
+    "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
+    "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
     "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
   },
   "testTimeout": 120000,

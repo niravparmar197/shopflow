@@ -1,0 +1,39 @@
+import { z } from 'zod';
+
+export const OrderEvents = {
+  CREATED: 'order.created',
+  CONFIRMED: 'order.confirmed', // stock reserved; Payment listens to this (F6)
+  FAILED: 'order.failed',
+  CANCELLED: 'order.cancelled',
+} as const;
+
+const OrderItem = z.object({
+  productId: z.string().min(1),
+  quantity: z.number().int().positive(),
+});
+
+export const OrderCreatedV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  items: z.array(OrderItem).min(1),
+  totalPaise: z.number().int().nonnegative(),
+  currency: z.string().length(3),
+});
+export type OrderCreatedV1 = z.infer<typeof OrderCreatedV1Schema>;
+
+// Order owns the order status, so downstream services follow these rather
+// than stock.* (e.g. never charge for an order that was already cancelled).
+export const OrderConfirmedV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  totalPaise: z.number().int().nonnegative(),
+  currency: z.string().length(3),
+});
+export type OrderConfirmedV1 = z.infer<typeof OrderConfirmedV1Schema>;
+
+export const OrderFailedV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  reason: z.string().min(1),
+});
+export type OrderFailedV1 = z.infer<typeof OrderFailedV1Schema>;

@@ -13,7 +13,19 @@ export const envSchema = z.object({
   DATABASE_URL: z.url().optional(),
   MONGO_URL: z.url().optional(),
   REDIS_URL: z.url().optional(),
-  KAFKA_BROKERS: z.string().min(1).optional(),
+  KAFKA_BROKERS: z.string().min(1).optional(), // comma-separated host:port
+  // Outbox relay (libs/kafka). Off in tests, which run without Kafka.
+  OUTBOX_RELAY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  // Kafka consumers (libs/kafka BaseConsumer). Off in tests without Kafka.
+  KAFKA_CONSUMERS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  OUTBOX_POLL_MS: z.coerce.number().int().positive().default(500),
+  OUTBOX_BATCH: z.coerce.number().int().positive().default(100),
 
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
@@ -41,6 +53,7 @@ export const envSchema = z.object({
   USER_SERVICE_URL: z.url().optional(),
   PRODUCT_SERVICE_URL: z.url().optional(),
   ORDER_SERVICE_URL: z.url().optional(),
+  INVENTORY_SERVICE_URL: z.url().optional(),
 
   // Comma-separated browser origins allowed to call the API with cookies.
   CORS_ORIGINS: z.string().optional(),

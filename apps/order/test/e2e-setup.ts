@@ -1,3 +1,5 @@
+// globalSetup runs outside Jest's module mapping; resolve @app/* from tsconfig.
+import 'tsconfig-paths/register';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import { RedisContainer } from '@testcontainers/redis';
 import { generateKeyPairSync } from 'node:crypto';
@@ -49,6 +51,11 @@ export default async function setup() {
     E2E_JWT_PRIVATE_KEY_PATH: join(keyDir, 'private.pem'),
     // Required by config; the tests replace the product client with a fake.
     PRODUCT_GRPC_URL: '127.0.0.1:1',
+    // No Kafka by default: the outbox is checked in the database.
+    // startOrderApp({ kafka: true }) switches it on for the saga suite.
+    KAFKA_BROKERS: '127.0.0.1:1',
+    OUTBOX_RELAY_ENABLED: 'false',
+    KAFKA_CONSUMERS_ENABLED: 'false',
   });
 
   // Handed to e2e-teardown.ts (same process).

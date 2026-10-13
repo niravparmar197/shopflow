@@ -1,72 +1,21 @@
-import { INestApplication, ServiceUnavailableException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { Test } from '@nestjs/testing';
-import { readFileSync } from 'node:fs';
-import request from 'supertest';
-import type { App } from 'supertest/types';
-import { configureApp, JWT_AUDIENCE, JWT_ISSUER } from '@app/common';
-import type { Product } from '@app/proto';
-import { orderAppOptions } from '../src/app.setup';
-import { CatalogClient } from '../src/catalog/catalog.client';
-import { OrderModule } from '../src/order.module';
+import { randomUUID } from 'node:crypto';
+import { FakeCatalog, oid, product, startOrderApp } from './helpers';
 
-// A valid 24-hex Mongo id from a number.
-const oid = (n: number) => n.toString(16).padStart(24, '0');
 const PHONE = oid(1); // ₹5,000
 const SHOE = oid(2); // ₹2,000
 const PEN = oid(3); // ₹300
 const MISC = Array.from({ length: 25 }, (_, i) => oid(100 + i)); // ₹10 each
 
-const product = (
-  id: string,
-  name: string,
-  category: string,
-  pricePaise: number,
-) => ({ id, name, category, pricePaise }) as Product;
-
-/** Stands in for the product service, so the suite doesn't need it running. */
-class FakeCatalog {
-  down = false;
-  private readonly products = new Map<string, Product>(
-    [
-      product(PHONE, 'Phone', 'phones', 500000),
-      product(SHOE, 'Shoe', 'shoes', 200000),
-      product(PEN, 'Pen', 'stationery', 30000),
-      ...MISC.map((id, i) => product(id, `Item ${i}`, 'misc', 1000)),
-    ].map((p) => [p.id, p]),
-  );
-
-  getByIds(ids: string[]) {
-    if (this.down) {
-      return Promise.reject(
-        new ServiceUnavailableException('Product service unavailable'),
-      );
-    }
-    return Promise.resolve(
-      new Map(
-        ids.flatMap((id) => {
-          const p = this.products.get(id);
-          return p ? [[id, p] as const] : [];
-        }),
-      ),
-    );
-  }
-}
-
 // Real order service + real PostgreSQL + real Redis; only the product
-// service is faked. The containers and env come from e2e-setup.ts.
+// service is faked.
 describe('Cart + coupons (e2e)', () => {
-  let app: INestApplication<App>;
-  let signer: JwtService;
-  const catalog = new FakeCatalog();
-
-  const http = () => request(app.getHttpServer());
-  const bearer = (sub: string, role = 'customer') =>
-    `Bearer ${signer.sign({ sub, email: `${sub}@test.dev`, role })}`;
+  let ctx: Awaited<ReturnType<typeof startOrderApp>>;
+  let catalog: FakeCatalog;
+  const http = () => ctx.http();
+  const bearer = (sub: string, role = 'customer') => ctx.bearer(sub, role);
 
   // Each test gets its own user, so its own empty cart.
-  let users = 0;
-  const newUser = () => bearer(`user-${++users}`);
+  const newUser = () => bearer(randomUUID());
 
   const add = (auth: string, productId: string, qty = 1) =>
     http()
@@ -75,34 +24,21 @@ describe('Cart + coupons (e2e)', () => {
       .send({ productId, qty });
   const applyCoupon = (auth: string, code: string) =>
     http().post('/v1/cart/coupon').set('Authorization', auth).send({ code });
-  const createCoupon = (body: object, auth = bearer('admin-1', 'admin')) =>
+  const createCoupon = (body: object, auth = bearer(randomUUID(), 'admin')) =>
     http()
       .post('/v1/coupons')
       .set('Authorization', auth)
       .send({ validFrom: '2026-01-01', validTo: '2030-12-31', ...body });
 
   beforeAll(async () => {
-    signer = new JwtService({
-      privateKey: readFileSync(process.env.E2E_JWT_PRIVATE_KEY_PATH!),
-      signOptions: {
-        algorithm: 'RS256',
-        issuer: JWT_ISSUER,
-        audience: JWT_AUDIENCE,
-        expiresIn: '5m',
-      },
-    });
-
-    const moduleRef = await Test.createTestingModule({
-      imports: [OrderModule],
-    })
-      .overrideProvider(CatalogClient)
-      .useValue(catalog)
-      .compile();
-    app = moduleRef.createNestApplication();
-    configureApp(app, orderAppOptions); // same setup as main.ts
-    // Listen once on a free port. Otherwise supertest starts the server for
-    // every request, which the 25 parallel adds below would overdo.
-    await app.listen(0, '127.0.0.1');
+    ctx = await startOrderApp();
+    catalog = ctx.catalog;
+    catalog.set(
+      product(PHONE, 'Phone', 'phones', 500000),
+      product(SHOE, 'Shoe', 'shoes', 200000),
+      product(PEN, 'Pen', 'stationery', 30000),
+      ...MISC.map((id, i) => product(id, `Item ${i}`, 'misc', 1000)),
+    );
 
     await createCoupon({
       code: 'SAVE10',
@@ -136,7 +72,7 @@ describe('Cart + coupons (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app?.close();
+    await ctx?.app.close();
   });
 
   describe('cart', () => {

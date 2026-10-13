@@ -37,6 +37,15 @@ redis.call('EXPIRE', KEYS[1], ARGV[3])
 return 1
 `;
 
+// KEYS[1] lock, ARGV[1] owner token. Deletes the lock only if we still own
+// it, so a lock that expired and was taken by someone else isn't removed.
+const RELEASE_LOCK = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`;
+
 /** The cart lives in a Redis hash cart:{userId} → { productId: qty }. */
 @Injectable()
 export class CartRepository {
@@ -94,7 +103,18 @@ export class CartRepository {
   getCoupon(userId: string) {
     return this.redis.get(couponKey(userId));
   }
+
+  /** One checkout per cart at a time. Returns false if someone holds it. */
+  async tryLockCheckout(userId: string, token: string, ttlMs: number) {
+    const res = await this.redis.set(lockKey(userId), token, 'PX', ttlMs, 'NX');
+    return res === 'OK';
+  }
+
+  async unlockCheckout(userId: string, token: string) {
+    await this.redis.eval(RELEASE_LOCK, 1, lockKey(userId), token);
+  }
 }
 
 const cartKey = (userId: string) => `cart:${userId}`;
 const couponKey = (userId: string) => `cart:${userId}:coupon`;
+const lockKey = (userId: string) => `cart:${userId}:checkout-lock`;

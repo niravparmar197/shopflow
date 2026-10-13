@@ -46,23 +46,11 @@ export class CategoryRule extends CouponRule {
   }
 }
 
-/**
- * What FirstOrderRule needs to know about past orders. The rule depends on
- * this interface, not on the orders table (Dependency Inversion).
- */
-export interface OrderHistory {
-  countPlacedOrders(userId: string): Promise<number>;
-}
-
 export class FirstOrderRule extends CouponRule {
-  constructor(private readonly history: OrderHistory) {
-    super();
-  }
-
-  protected async check({ coupon, userId }: CouponContext) {
+  protected async check({ coupon, userId, history }: CouponContext) {
     if (
       coupon.firstOrderOnly &&
-      (await this.history.countPlacedOrders(userId)) > 0
+      (await history.countPlacedOrders(userId)) > 0
     ) {
       throw new CouponRejected('Coupon is only for your first order');
     }

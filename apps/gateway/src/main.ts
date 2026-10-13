@@ -11,6 +11,12 @@ void bootstrapService(GatewayModule, {
       .split(',')
       .map((o) => o.trim())
       .filter(Boolean);
-    app.enableCors({ origin: origins, credentials: true }); // allow the refresh cookie
+    app.enableCors({
+      origin: origins,
+      credentials: true, // allow the refresh cookie
+      // Request headers (e.g. Idempotency-Key) are allowed by reflecting the
+      // preflight; these response headers must be listed for JS to read them.
+      exposedHeaders: ['Idempotent-Replayed', 'x-correlation-id'],
+    });
   },
 });
