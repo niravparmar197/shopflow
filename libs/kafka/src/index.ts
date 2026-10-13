@@ -1,3 +1,6 @@
+export * from './consumer/base-consumer';
+export * from './consumer/poison-message.error';
+export * from './consumer/processed-event.entity';
 export * from './kafka.constants';
 export * from './kafka-producer.service';
 export * from './kafka.module';

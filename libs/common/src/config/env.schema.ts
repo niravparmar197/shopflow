@@ -19,6 +19,11 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  // Kafka consumers (libs/kafka BaseConsumer). Off in tests without Kafka.
+  KAFKA_CONSUMERS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   OUTBOX_POLL_MS: z.coerce.number().int().positive().default(500),
   OUTBOX_BATCH: z.coerce.number().int().positive().default(100),
 
@@ -48,6 +53,7 @@ export const envSchema = z.object({
   USER_SERVICE_URL: z.url().optional(),
   PRODUCT_SERVICE_URL: z.url().optional(),
   ORDER_SERVICE_URL: z.url().optional(),
+  INVENTORY_SERVICE_URL: z.url().optional(),
 
   // Comma-separated browser origins allowed to call the API with cookies.
   CORS_ORIGINS: z.string().optional(),

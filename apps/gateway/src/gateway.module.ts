@@ -59,6 +59,9 @@ export class GatewayModule implements NestModule {
     const orderService = this.config.getOrThrow('ORDER_SERVICE_URL', {
       infer: true,
     });
+    const inventoryService = this.config.getOrThrow('INVENTORY_SERVICE_URL', {
+      infer: true,
+    });
 
     // 1) Global limit for everything except health probes.
     consumer
@@ -132,5 +135,11 @@ export class GatewayModule implements NestModule {
       .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
       .exclude(placeOrder)
       .forRoutes('v1/orders{/*path}');
+
+    // 8) Inventory (admin stock management): JWT here, the inventory
+    //    service checks the admin role.
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(inventoryService))
+      .forRoutes('v1/inventory{/*path}');
   }
 }
