@@ -8,6 +8,13 @@ import { KafkaConsumerCore } from './kafka-consumer-core';
 import { ProcessedEvent } from './processed-event.entity';
 
 /**
+ * A side effect outside the database (Redis, HTTP…) that handle() wants run
+ * only AFTER its transaction committed. Run inside, a rollback + retry would
+ * repeat it (e.g. put a flash-sale item back on sale twice).
+ */
+export type AfterCommit = () => Promise<void>;
+
+/**
  * For services with PostgreSQL: the event id goes into processed_events in
  * the SAME transaction as handle()'s changes (already there → duplicate,
  * skipped). Exactly-once effect on top of at-least-once delivery.
@@ -16,11 +23,12 @@ import { ProcessedEvent } from './processed-event.entity';
  */
 export abstract class BaseConsumer extends KafkaConsumerCore {
   /** Business logic, inside the transaction: write only through `m`.
-   *  event.data has already been validated against schemas[event.type]. */
+   *  event.data has already been validated against schemas[event.type].
+   *  May return an AfterCommit step for side effects outside the DB. */
   protected abstract handle(
     m: EntityManager,
     event: EventEnvelope,
-  ): Promise<void>;
+  ): Promise<void | AfterCommit>;
 
   constructor(
     protected readonly ds: DataSource,
@@ -32,7 +40,7 @@ export abstract class BaseConsumer extends KafkaConsumerCore {
   }
 
   protected async processEvent(event: EventEnvelope) {
-    await this.ds.transaction(async (m) => {
+    const after = await this.ds.transaction(async (m) => {
       const fresh = await m
         .createQueryBuilder()
         .insert()
@@ -43,9 +51,22 @@ export abstract class BaseConsumer extends KafkaConsumerCore {
         .execute();
       if ((fresh.raw as unknown[]).length === 0) {
         this.logger.warn(`Duplicate ${event.type} ${event.eventId}, skipped`);
-        return;
+        return undefined;
       }
-      await this.handle(m, event);
+      return this.handle(m, event);
     });
+
+    if (after) {
+      // Once, after the commit. A crash right here loses it: choose side
+      // effects whose loss is the SAFE direction (a flash-sale token not
+      // returned = one unit undersold, never oversold). Its failure doesn't
+      // fail the event: the DB change is already committed.
+      await after().catch((err: unknown) =>
+        this.logger.error(
+          { err },
+          `After-commit step for ${event.type} ${event.eventId} failed`,
+        ),
+      );
+    }
   }
 }

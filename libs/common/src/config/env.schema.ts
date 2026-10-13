@@ -91,6 +91,13 @@ export const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: optionalSecret,
   FAKE_WEBHOOK_SECRET: optionalSecret,
 
+  // Service-to-service calls (order → inventory /internal/*). Never sent
+  // through the gateway. Production: private network + mTLS (F11).
+  INTERNAL_API_TOKEN: optionalSecret,
+  // Order → inventory flash-sale gate: calls in flight, and waiting.
+  FLASH_BULKHEAD_MAX: z.coerce.number().int().positive().default(50),
+  FLASH_BULKHEAD_QUEUE: z.coerce.number().int().nonnegative().default(200),
+
   USER_SERVICE_URL: z.url().optional(),
   PRODUCT_SERVICE_URL: z.url().optional(),
   ORDER_SERVICE_URL: z.url().optional(),

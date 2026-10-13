@@ -7,6 +7,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule, Env, RedisModule } from '@app/common';
 import { KafkaModule } from '@app/kafka';
 import { INVENTORY_ENTITIES } from './database/entities';
+import {
+  FlashSaleAdminController,
+  FlashSaleInternalController,
+} from './flash/flash-sale.controller';
+import { FlashSaleService } from './flash/flash-sale.service';
+import { InternalTokenGuard } from './flash/internal-token.guard';
 import { ReservationExpiryJob } from './jobs/reservation-expiry.job';
 import { OrderEventsConsumer } from './reservations/order-events.consumer';
 import { ReservationService } from './reservations/reservation.service';
@@ -39,7 +45,17 @@ import { StockController } from './stock/stock.controller';
       }),
     }),
   ],
-  controllers: [StockController],
-  providers: [ReservationService, OrderEventsConsumer, ReservationExpiryJob],
+  controllers: [
+    StockController,
+    FlashSaleAdminController,
+    FlashSaleInternalController,
+  ],
+  providers: [
+    ReservationService,
+    OrderEventsConsumer,
+    ReservationExpiryJob,
+    FlashSaleService,
+    InternalTokenGuard,
+  ],
 })
 export class InventoryModule {}

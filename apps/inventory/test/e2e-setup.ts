@@ -52,6 +52,7 @@ export default async function setup() {
     // 127.0.0.1, not localhost: Windows resolves localhost to ::1 first.
     REDIS_URL: `redis://127.0.0.1:${redis.getMappedPort(6379)}`,
     JOBS_ENABLED: 'false', // the tests run the jobs themselves
+    INTERNAL_API_TOKEN: 'test-internal-token',
     OUTBOX_POLL_MS: '100',
   });
 

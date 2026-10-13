@@ -15,6 +15,7 @@ import { CouponsController } from './coupons/coupons.controller';
 import { CouponsService } from './coupons/coupons.service';
 import { OrderHistoryService } from './coupons/order-history.service';
 import { ORDER_ENTITIES } from './database/entities';
+import { FlashGateClient } from './flash/flash-gate.client';
 import { IdempotencyService } from './idempotency/idempotency.service';
 import { JobsModule } from './jobs/jobs.module';
 import { CheckoutService } from './orders/checkout.service';
@@ -60,6 +61,7 @@ import { OrderSagaService } from './saga/order-saga.service';
     CouponsService,
     OrderHistoryService,
     CheckoutService,
+    FlashGateClient,
     OrdersService,
     IdempotencyService,
     OrderSagaService,

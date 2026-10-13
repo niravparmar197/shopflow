@@ -55,6 +55,7 @@ export class OrderEventsConsumer extends BaseConsumer {
         return this.reservations.release(
           m,
           (e.data as OrderCancelledV1).orderId,
+          (e.data as OrderCancelledV1).userId,
         );
     }
   }

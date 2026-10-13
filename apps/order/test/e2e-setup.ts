@@ -57,6 +57,9 @@ export default async function setup() {
     OUTBOX_RELAY_ENABLED: 'false',
     KAFKA_CONSUMERS_ENABLED: 'false',
     JOBS_ENABLED: 'false', // the tests call tick() themselves
+    // No inventory here: the flash gate's calls fail fast → it fails open.
+    INVENTORY_SERVICE_URL: 'http://127.0.0.1:1',
+    INTERNAL_API_TOKEN: 'test-internal-token',
   });
 
   // Handed to e2e-teardown.ts (same process).

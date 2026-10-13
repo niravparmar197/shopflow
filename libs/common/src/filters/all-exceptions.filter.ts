@@ -86,6 +86,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : (body as { details?: unknown } | null)?.details,
       correlationId,
     };
+    // An error that says when to retry (e.g. 429 SERVER_BUSY) also gets the
+    // standard header, which clients and load tools understand.
+    const retryAfterSec = (payload.details as { retryAfterSec?: unknown })
+      ?.retryAfterSec;
+    if (typeof retryAfterSec === 'number' && retryAfterSec > 0) {
+      res.setHeader('Retry-After', Math.ceil(retryAfterSec));
+    }
     res.status(status).json(payload);
   }
 }

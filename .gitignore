@@ -58,3 +58,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # JWT signing keys (never commit; production keys live in a secret store)
 keys/
+
+# Load-test user tokens (scripts/make-test-tokens.js): signed with the dev key
+load-tests/.data/
