@@ -62,6 +62,9 @@ export class GatewayModule implements NestModule {
     const inventoryService = this.config.getOrThrow('INVENTORY_SERVICE_URL', {
       infer: true,
     });
+    const paymentService = this.config.getOrThrow('PAYMENT_SERVICE_URL', {
+      infer: true,
+    });
 
     // 1) Global limit for everything except health probes.
     consumer
@@ -141,5 +144,12 @@ export class GatewayModule implements NestModule {
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(inventoryService))
       .forRoutes('v1/inventory{/*path}');
+
+    // 9) Payments: JWT here; the payment service checks it again and only
+    //    shows the caller's own payments. (Provider webhooks will need a
+    //    route without JWT; they are signed instead.)
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(paymentService))
+      .forRoutes('v1/payments{/*path}');
   }
 }

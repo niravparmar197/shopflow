@@ -21,7 +21,11 @@ export function topicForEvent(type: string): string {
 }
 
 // Each consumer group also has <group>.retry and <group>.dlq (BaseConsumer).
-export const CONSUMER_GROUPS = ['inventory-svc', 'order-svc'] as const;
+export const CONSUMER_GROUPS = [
+  'inventory-svc',
+  'order-svc',
+  'payment-svc',
+] as const;
 
 /** Every topic the system uses; the tests create these in their Kafka. */
 export const ALL_TOPICS: string[] = [
