@@ -1,8 +1,10 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { SpanKind } from '@opentelemetry/api';
 import { type Job, UnrecoverableError } from 'bullmq';
 import { Model } from 'mongoose';
+import { inSpan, restoreTraceContext } from '@app/observability';
 import {
   type NotificationCommand,
   NOTIFICATIONS_QUEUE,
@@ -16,6 +18,8 @@ import { NotificationLog } from '../logs/notification-log.schema';
 type JobData = Record<string, unknown> & {
   // Missing on jobs queued before the log travelled with the job.
   log?: NotificationCommand['log'];
+  // The trace of the event that queued it (missing on older jobs).
+  trace?: Record<string, string>;
 };
 
 /*
@@ -49,9 +53,30 @@ export class NotificationsProcessor extends WorkerHost {
     this.handlers = new Map(handlers.map((h) => [h.jobName, h]));
   }
 
-  async process(job: Job<JobData>): Promise<void> {
+  process(job: Job<JobData>): Promise<void> {
+    const { trace, log, ...payload } = job.data;
+    // A span in the trace of the event that queued the job.
+    return inSpan(
+      `job ${job.name}`,
+      {
+        kind: SpanKind.CONSUMER,
+        parent: restoreTraceContext(trace),
+        attributes: {
+          'shopflow.order_id': log?.orderId ?? '',
+          'job.id': job.id ?? '',
+          'job.attempt': job.attemptsMade + 1,
+        },
+      },
+      () => this.send(job, log, payload),
+    );
+  }
+
+  private async send(
+    job: Job<JobData>,
+    log: JobData['log'],
+    payload: Record<string, unknown>,
+  ) {
     const key = job.id!;
-    const { log, ...payload } = job.data;
 
     // Create the log if the dispatcher hasn't yet; count this attempt.
     const current = await this.logs.findOneAndUpdate(

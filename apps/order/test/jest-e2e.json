@@ -25,7 +25,8 @@
     "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
     "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1",
     "^@app/scheduler(|/.*)$": "<rootDir>/libs/scheduler/src/$1",
-    "^@app/resilience(|/.*)$": "<rootDir>/libs/resilience/src/$1"
+    "^@app/resilience(|/.*)$": "<rootDir>/libs/resilience/src/$1",
+    "^@app/observability(|/.*)$": "<rootDir>/libs/observability/src/$1"
   },
   "testTimeout": 120000,
   "globalSetup": "<rootDir>/apps/order/test/e2e-setup.ts",

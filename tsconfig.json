@@ -57,6 +57,12 @@
       ],
       "@app/scheduler/*": [
         "libs/scheduler/src/*"
+      ],
+      "@app/observability": [
+        "libs/observability/src"
+      ],
+      "@app/observability/*": [
+        "libs/observability/src/*"
       ]
     }
   }

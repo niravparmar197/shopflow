@@ -64,6 +64,15 @@
         "tsConfigPath": "apps/notification/tsconfig.app.json"
       }
     },
+    "observability": {
+      "type": "library",
+      "root": "libs/observability",
+      "entryFile": "index",
+      "sourceRoot": "libs/observability/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/observability/tsconfig.lib.json"
+      }
+    },
     "order": {
       "type": "application",
       "root": "apps/order",

@@ -5,11 +5,19 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  propagation,
+  type Span,
+  SpanKind,
+  SpanStatusCode,
+  trace,
+} from '@opentelemetry/api';
 import type { Message } from 'kafkajs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DataSource } from 'typeorm';
 import { topicForEvent } from '@app/events';
 import type { Env } from '@app/common';
+import { restoreTraceContext, tracer } from '@app/observability';
 import { KafkaProducerService } from '../kafka-producer.service';
 import { OutboxEvent } from './outbox-event.entity';
 
@@ -90,15 +98,42 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
         .getMany();
       if (rows.length === 0) return 0;
 
+      // One PRODUCER span per message, child of the trace saved in the row
+      // (the request that created the event ended long ago).
       const byTopic = new Map<string, Message[]>();
+      const spans: Span[] = [];
       for (const row of rows) {
         const envelope = row.payload;
         const topic = topicForEvent(row.eventType);
+        const parent = restoreTraceContext(envelope.trace);
+        const span = tracer.startSpan(
+          `${topic} publish`,
+          {
+            kind: SpanKind.PRODUCER,
+            attributes: {
+              'messaging.system': 'kafka',
+              'messaging.destination.name': topic,
+              'messaging.message.id': row.id,
+              'shopflow.event_type': row.eventType,
+              'shopflow.order_id': row.aggregateId,
+              // How long it waited in the outbox: the gap you see in Jaeger.
+              'shopflow.outbox_wait_ms': Date.now() - row.createdAt.getTime(),
+            },
+          },
+          parent,
+        );
+        spans.push(span);
+        // THIS span's context in the Kafka headers: the consumer's span
+        // becomes its child.
+        const traceHeaders: Record<string, string> = {};
+        propagation.inject(trace.setSpan(parent, span), traceHeaders);
+
         const messages = byTopic.get(topic) ?? [];
         messages.push({
           key: row.aggregateId, // same aggregate → same partition → in order
           value: JSON.stringify(envelope),
           headers: {
+            ...traceHeaders,
             'event-id': row.id,
             'event-type': row.eventType,
             'correlation-id': envelope.correlationId ?? '',
@@ -107,9 +142,19 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
         byTopic.set(topic, messages);
       }
 
-      await this.producer.sendBatch(
-        [...byTopic].map(([topic, messages]) => ({ topic, messages })),
-      );
+      try {
+        await this.producer.sendBatch(
+          [...byTopic].map(([topic, messages]) => ({ topic, messages })),
+        );
+      } catch (err) {
+        for (const s of spans) {
+          s.recordException(err as Error);
+          s.setStatus({ code: SpanStatusCode.ERROR });
+        }
+        throw err;
+      } finally {
+        spans.forEach((s) => s.end());
+      }
       await m
         .createQueryBuilder()
         .update(OutboxEvent)
