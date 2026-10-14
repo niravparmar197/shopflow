@@ -26,6 +26,7 @@ export function connectProductGrpc(app: INestApplication, url: string) {
 // Hybrid app: HTTP on PORT (admin writes + health), gRPC on GRPC_PORT.
 export const productAppOptions: BootstrapOptions = {
   globalPrefix: 'v1',
+  swagger: { title: 'Products (admin)' },
   beforeListen: async (app) => {
     const config = app.get<ConfigService<Env, true>>(ConfigService);
     const grpcPort = config.get('GRPC_PORT', { infer: true }) ?? 50052;

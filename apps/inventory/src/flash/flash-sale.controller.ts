@@ -10,9 +10,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { IsInt, IsMongoId, IsUUID, Max, Min } from 'class-validator';
-import { JwtAuthGuard, Roles, RolesGuard } from '@app/common';
+import {
+  ApiBearerAuth,
+  ApiExcludeController,
+  ApiNoContentResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { ApiError, JwtAuthGuard, Roles, RolesGuard } from '@app/common';
 import { FlashSaleService } from './flash-sale.service';
 import { InternalTokenGuard } from './internal-token.guard';
+import { StartSaleDto } from './start-sale.dto';
 
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
 const assertProductId = (id: string) => {
@@ -23,20 +30,6 @@ const assertProductId = (id: string) => {
     });
   }
 };
-
-class StartSaleDto {
-  @IsMongoId()
-  productId!: string;
-
-  @IsInt()
-  @Min(1)
-  quantity!: number;
-
-  @IsInt()
-  @Min(1)
-  @Max(24 * 60)
-  durationMinutes!: number;
-}
 
 class TokenDto {
   @IsMongoId()
@@ -52,25 +45,35 @@ class TokenDto {
 }
 
 /** Admin, through the gateway: /v1/inventory/flash-sales. */
+@ApiTags('Admin � Flash sales')
+@ApiBearerAuth()
 @Controller('inventory/flash-sales')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class FlashSaleAdminController {
   constructor(private readonly flash: FlashSaleService) {}
 
+  /** Start a flash sale: moves the units from stock into the sale */
   @Post()
+  @ApiError(400, 'NOT_ENOUGH_STOCK')
+  @ApiError(409, 'SALE_ACTIVE (one sale per product at a time)')
   start(@Body() dto: StartSaleDto) {
     return this.flash.start(dto.productId, dto.quantity, dto.durationMinutes);
   }
 
+  /** Units left, end time */
   @Get(':productId')
+  @ApiError(404, 'FLASH_SALE_NOT_FOUND')
   status(@Param('productId') id: string) {
     assertProductId(id);
     return this.flash.status(id);
   }
 
+  /** End the sale early; unsold units go back to stock */
   @Delete(':productId')
   @HttpCode(204)
+  @ApiNoContentResponse({ description: 'Ended' })
+  @ApiError(404, 'FLASH_SALE_NOT_FOUND')
   async end(@Param('productId') id: string) {
     assertProductId(id);
     await this.flash.end(id);
@@ -78,6 +81,7 @@ export class FlashSaleAdminController {
 }
 
 /** Order → inventory only. The gateway must NEVER route /v1/internal/*. */
+@ApiExcludeController()
 @Controller('internal/flash-sales')
 @UseGuards(InternalTokenGuard)
 export class FlashSaleInternalController {

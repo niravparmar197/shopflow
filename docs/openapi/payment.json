@@ -1,0 +1,199 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/v1/payments/{orderId}": {
+      "get": {
+        "operationId": "PaymentsController_get",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "UNAUTHORIZED (missing or expired token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PAYMENT_NOT_FOUND (none yet, or another user's order)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The payment for one of your orders.",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/v1/payments/{orderId}/checkout": {
+      "post": {
+        "operationId": "PaymentsController_checkout",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED (missing or expired token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PAYMENT_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PAYMENT_NOT_PAYABLE (already paid, failed, ...) | PAYMENT_EXPIRED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED (per user, at the gateway)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "PAYMENT_PROVIDER_ERROR (the provider rejected the request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "PAYMENT_PROVIDER_UNAVAILABLE (provider down or circuit open; safe to retry) | PAYMENT_NOT_FOUND_YET (order just placed; retry in a moment)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start paying: returns what the frontend needs to open the provider's\ncheckout. Safe to call again (refresh, back button): same provider order.",
+        "tags": [
+          "Payments"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "ShopFlow – Payments",
+    "description": "",
+    "version": "exported",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "ErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable code, e.g. SOLD_OUT, PRICE_CHANGED, or the status name (CONFLICT)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message (\"Validation failed\" for invalid input)"
+          },
+          "details": {
+            "type": "object",
+            "description": "Validation messages, or extra data, e.g. { retryAfterSec } for SERVER_BUSY"
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Echo of the x-correlation-id header (or a new one); quote it in bug reports"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "Paste into Jaeger to see the whole request (absent if not traced)"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "correlationId"
+        ]
+      }
+    }
+  }
+}

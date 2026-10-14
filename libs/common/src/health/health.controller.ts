@@ -1,4 +1,5 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
 import {
   HealthCheck,
   HealthCheckService,
@@ -16,6 +17,7 @@ process.once('SIGTERM', () => {
   shuttingDown = true;
 });
 
+@ApiExcludeController() // ops, not API
 @Controller('health')
 export class HealthController {
   constructor(

@@ -1,4 +1,5 @@
 import { Controller, Get, Header, Module } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
 import { registry } from './metrics';
 
 /**
@@ -6,6 +7,7 @@ import { registry } from './metrics';
  * internal network only: never routed through the gateway, and blocked at
  * the edge in production (the gateway's own /metrics included).
  */
+@ApiExcludeController()
 @Controller()
 class MetricsController {
   @Get('metrics')

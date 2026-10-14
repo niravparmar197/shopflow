@@ -1,0 +1,93 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/v1/notifications": {
+      "get": {
+        "operationId": "LogsController_byOrder",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "403": {
+            "description": "FORBIDDEN (admins only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What did we send for this order? (support)",
+        "tags": [
+          "Admin – Notifications"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "ShopFlow – Notifications (admin)",
+    "description": "",
+    "version": "exported",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "ErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable code, e.g. SOLD_OUT, PRICE_CHANGED, or the status name (CONFLICT)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message (\"Validation failed\" for invalid input)"
+          },
+          "details": {
+            "type": "object",
+            "description": "Validation messages, or extra data, e.g. { retryAfterSec } for SERVER_BUSY"
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Echo of the x-correlation-id header (or a new one); quote it in bug reports"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "Paste into Jaeger to see the whole request (absent if not traced)"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "correlationId"
+        ]
+      }
+    }
+  }
+}

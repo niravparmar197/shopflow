@@ -1,0 +1,275 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/v1/auth/signup": {
+      "post": {
+        "operationId": "AuthController_signup",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "{ user } (no token: log in next)"
+          },
+          "400": {
+            "description": "BAD_REQUEST (validation: email, password 8-72 with a letter and a digit, name)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "CONFLICT (email is already registered)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create an account (role: customer)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ user, accessToken, ... }"
+          },
+          "401": {
+            "description": "UNAUTHORIZED (invalid email or password)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "RATE_LIMITED (5 login attempts per minute per IP)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Log in. Returns an access token for the Authorize button, and sets the\nrefresh token as an httpOnly cookie (path /v1/auth).",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHORIZED (missing, expired, or reused refresh token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "rt": []
+          }
+        ],
+        "summary": "A new access token from the refresh cookie. The refresh token rotates;\nreusing an old one revokes the whole family (stolen-token detection).",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Logged out"
+          }
+        },
+        "security": [
+          {
+            "rt": []
+          }
+        ],
+        "summary": "Revoke the refresh token family and clear the cookie",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/users/me": {
+      "get": {
+        "operationId": "UsersController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "UNAUTHORIZED (missing or expired token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Your profile",
+        "tags": [
+          "Users"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "ShopFlow – User & Auth",
+    "description": "",
+    "version": "exported",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "SignupDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 72,
+            "pattern": "^(?=.*[A-Za-z])(?=.*\\d).+$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "name"
+        ]
+      },
+      "ErrorResponseDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable code, e.g. SOLD_OUT, PRICE_CHANGED, or the status name (CONFLICT)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message (\"Validation failed\" for invalid input)"
+          },
+          "details": {
+            "type": "object",
+            "description": "Validation messages, or extra data, e.g. { retryAfterSec } for SERVER_BUSY"
+          },
+          "correlationId": {
+            "type": "string",
+            "description": "Echo of the x-correlation-id header (or a new one); quote it in bug reports"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "Paste into Jaeger to see the whole request (absent if not traced)"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "correlationId"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 72
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      }
+    }
+  }
+}

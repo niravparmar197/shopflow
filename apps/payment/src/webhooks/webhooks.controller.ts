@@ -7,6 +7,7 @@ import {
   type RawBodyRequest,
   Req,
 } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { WebhookService } from './webhook.service';
 
@@ -14,6 +15,8 @@ import { WebhookService } from './webhook.service';
  * Called by the payment provider, not a user: NO JWT. The HMAC signature
  * over the raw body is the authentication.
  */
+// Hidden from the docs: providers call it with a signature; "Try it out" makes no sense.
+@ApiExcludeController()
 @Controller('payments/webhooks')
 export class WebhooksController {
   constructor(private readonly webhooks: WebhookService) {}

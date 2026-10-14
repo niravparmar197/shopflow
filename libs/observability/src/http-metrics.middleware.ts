@@ -14,13 +14,19 @@ export function normalizePath(url: string) {
     .replace(NUMBER, '/:n');
 }
 
-/** RED metrics for every request (not /metrics or /health). */
+/** RED metrics for every request (not /metrics, /health or /docs). */
 export function httpMetricsMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
 ) {
-  if (req.path === '/metrics' || req.path.startsWith('/health')) return next();
+  if (
+    req.path === '/metrics' ||
+    req.path.startsWith('/health') ||
+    req.path.startsWith('/docs')
+  ) {
+    return next();
+  }
   const stop = httpDuration.startTimer();
   res.on('finish', () => {
     // CARDINALITY: never a raw URL in a label. Each distinct value is a new

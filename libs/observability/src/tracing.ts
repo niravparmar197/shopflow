@@ -42,7 +42,7 @@ export function startTracing(serviceName: string) {
         '@opentelemetry/instrumentation-http': {
           // Health checks and metric scrapes every few seconds = noise.
           ignoreIncomingRequestHook: (req) =>
-            /^\/(health|metrics)/.test(req.url ?? ''),
+            /^\/(health|metrics|docs)/.test(req.url ?? ''),
         },
         // Only inside a trace: the outbox relay polls Postgres every 500 ms,
         // BullMQ and the schedulers poll Redis; without a parent each query

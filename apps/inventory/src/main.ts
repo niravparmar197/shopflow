@@ -12,5 +12,8 @@ if (process.argv[2] === 'migrate') {
     entities: INVENTORY_ENTITIES,
   });
 } else {
-  void bootstrapService(InventoryModule, { globalPrefix: 'v1' });
+  void bootstrapService(InventoryModule, {
+    globalPrefix: 'v1',
+    swagger: { title: 'Inventory (admin)' },
+  });
 }
