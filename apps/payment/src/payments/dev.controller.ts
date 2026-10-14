@@ -7,6 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ApiExcludeController } from '@nestjs/swagger';
 import { IsIn } from 'class-validator';
 import { type Env, JwtAuthGuard } from '@app/common';
 import { ResilienceRegistry } from '@app/resilience';
@@ -26,6 +27,7 @@ class FakeModeDto {
  * DEV ONLY: fault injection to test retry, timeout and the circuit breaker.
  * Not registered in production, and answers 404 there anyway.
  */
+@ApiExcludeController()
 @Controller('payments/dev')
 @UseGuards(JwtAuthGuard)
 export class DevController {

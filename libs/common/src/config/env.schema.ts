@@ -113,6 +113,12 @@ export const envSchema = z.object({
   // X-Forwarded-For to get around it.
   RATE_LIMIT_GLOBAL_PER_MIN: z.coerce.number().int().positive().default(100),
 
+  // OpenAPI: each service serves /docs/openapi.json, the gateway the UI at /docs.
+  SWAGGER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
   // Comma-separated browser origins allowed to call the API with cookies.
   CORS_ORIGINS: z.string().optional(),
 });

@@ -8,21 +8,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsInt, Max, Min } from 'class-validator';
 import { Repository } from 'typeorm';
-import { JwtAuthGuard, Roles, RolesGuard } from '@app/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiError, JwtAuthGuard, Roles, RolesGuard } from '@app/common';
+import { SetStockDto } from './set-stock.dto';
 import { Stock } from './stock.entity';
 
 const OBJECT_ID = /^[0-9a-f]{24}$/i;
 
-class SetStockDto {
-  @IsInt()
-  @Min(0)
-  @Max(1_000_000)
-  available!: number;
-}
-
 // Admin only: set and read stock levels.
+@ApiTags('Admin � Stock')
+@ApiBearerAuth()
 @Controller('inventory/stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -46,7 +42,9 @@ export class StockController {
     return this.get(productId);
   }
 
+  /** Available and reserved units */
   @Get(':productId')
+  @ApiError(404, 'STOCK_NOT_FOUND')
   async get(@Param('productId') productId: string) {
     assertProductId(productId);
     const row = await this.stock.findOneBy({ productId });

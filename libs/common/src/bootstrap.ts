@@ -6,6 +6,7 @@ import { httpMetricsMiddleware, initMetrics } from '@app/observability';
 import { Logger } from 'nestjs-pino';
 import { Env } from './config/env.schema';
 import { AllExceptionsFilter } from './filters/all-exceptions.filter';
+import { setupServiceSwagger } from './swagger/setup-service-swagger';
 
 export interface BootstrapOptions {
   /** Route prefix such as 'v1'. Health checks stay unprefixed. */
@@ -14,6 +15,8 @@ export interface BootstrapOptions {
   bodyParser?: boolean;
   /** Keep the request's original bytes in req.rawBody (webhook signatures). */
   rawBody?: boolean;
+  /** Publish this service's OpenAPI spec under this title (gateway shows it). */
+  swagger?: { title: string };
   /** Service-specific setup (extra middleware etc.), run before listening. */
   configure?: (app: INestApplication) => void;
   /** Async startup work before the HTTP server listens (e.g. a gRPC server). */
@@ -27,7 +30,7 @@ export interface BootstrapOptions {
  */
 export function configureApp(
   app: INestApplication,
-  { globalPrefix, configure }: BootstrapOptions = {},
+  { globalPrefix, swagger, configure }: BootstrapOptions = {},
 ) {
   // Metrics: every metric labelled with this service; RED per route.
   initMetrics(
@@ -50,6 +53,7 @@ export function configureApp(
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
+  if (swagger) setupServiceSwagger(app, swagger.title); // after the prefix
   configure?.(app);
 }
 

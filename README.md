@@ -390,6 +390,18 @@ Budget almost spent → freeze risky releases and fix reliability first; plenty 
 
 Tested in `read-model.e2e-spec.ts`: events fed out of order, cancel then late payment + refund, read-your-writes before and after projection, and someone else's order → 404.
 
+## API docs (Swagger)
+
+**http://localhost:3000/docs**: one Swagger UI on the gateway, with a dropdown per service (Gateway products, User & Auth, Orders & Cart, Payments, and the admin APIs).
+
+- Each service describes itself and serves only `GET /docs/openapi.json`. The `@nestjs/swagger` CLI plugin builds the schemas from the class-validator DTOs and `/** comments */` (`*.dto.ts`, `*.entity.ts`, `*.query.ts`), so restart `start:dev` after changing one.
+- The gateway fetches each spec (2 s timeout), caches it for 60 s, and serves the last good copy if a service is down; with no copy it returns `502 SPEC_UNAVAILABLE` for that spec only.
+- "Try it out" goes through the real gateway: JWT checks, rate limits, the Idempotency-Key rule. Log in under **User & Auth**, paste `accessToken` into **Authorize**; it persists across specs and reloads.
+- Error responses are documented with the shared `ErrorResponseDto` and the codes each endpoint can return (`@ApiError(status, 'CODE | CODE')`).
+- Hidden: webhooks (providers call them with a signature), `/internal/*`, dev endpoints, health, metrics.
+- `SWAGGER_ENABLED=false` turns it all off. In production `/docs` sits behind basic auth at the edge: a public map of every endpoint helps attackers.
+- `npm run openapi:export` (stack running) writes `docs/openapi/*.json`; commit them so API changes show up in the PR diff.
+
 ## Production images (F11)
 
 One `Dockerfile` for all 7 services: multi-stage (dev deps stay in the build stage), `node:22-bookworm-slim` pinned (glibc, for bcrypt), non-root `node` user, `tini` as PID 1 so `SIGTERM` reaches Node, and a `HEALTHCHECK` on `/health/live`. No secrets in the image: env comes from `infra/env/*.env`, JWT keys are mounted at `/run/keys`.
@@ -429,6 +441,7 @@ docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
 | `npm run kafka:topics`                                                        | Create the Kafka topics (idempotent; `KAFKA_RF=3` in production)   |
 | `npm run dlq:replay -- <group>`                                               | Send a consumer group's dead letters back to their topic           |
+| `npm run openapi:export`                                                      | Save every API spec to `docs/openapi/` (stack running)             |
 | `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.

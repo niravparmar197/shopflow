@@ -1,6 +1,7 @@
 import './tracing'; // MUST stay first: see tracing.ts
 import { ConfigService } from '@nestjs/config';
 import { bootstrapService, Env } from '@app/common';
+import { setupGatewayDocs } from './docs/setup-gateway-docs';
 import { GatewayModule } from './gateway.module';
 
 void bootstrapService(GatewayModule, {
@@ -25,5 +26,6 @@ void bootstrapService(GatewayModule, {
         'RateLimit-Remaining',
       ],
     });
+    setupGatewayDocs(app); // Swagger UI at /docs, all services' specs
   },
 });

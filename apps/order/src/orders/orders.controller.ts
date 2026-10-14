@@ -12,14 +12,29 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiHeader,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
-import { CurrentUser, JwtAuthGuard, type JwtPayload } from '@app/common';
+import {
+  ApiError,
+  CurrentUser,
+  JwtAuthGuard,
+  type JwtPayload,
+} from '@app/common';
 import { IdempotencyService } from '../idempotency/idempotency.service';
 import { CheckoutService } from './checkout.service';
 import { PlaceOrderDto } from './dto/place-order.dto';
 import { toOrderResponse } from './order.mapper';
 import { OrdersService } from './orders.service';
 
+@ApiTags('Orders')
+@ApiBearerAuth()
+@ApiError(401, 'UNAUTHORIZED (missing or expired token)')
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
@@ -30,10 +45,39 @@ export class OrdersController {
   ) {}
 
   /**
+   * Place an order from your cart.
+   *
    * A double click or a retry must not create a second order: the client
    * sends the same Idempotency-Key each time and gets the first result back.
    */
   @Post()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description:
+      '8–100 chars (letters, digits, - _). Send the SAME key when you retry, so you never get 2 orders. A replay answers with the header Idempotent-Replayed: true.',
+  })
+  @ApiCreatedResponse({
+    description:
+      'Order created with status PENDING. Stock is reserved in the background.',
+  })
+  @ApiError(
+    400,
+    'IDEMPOTENCY_KEY_REQUIRED | IDEMPOTENCY_KEY_INVALID | BAD_REQUEST (validation)',
+  )
+  @ApiError(
+    409,
+    'PRICE_CHANGED | CART_ITEM_UNAVAILABLE | COUPON_NOT_APPLICABLE | COUPON_EXHAUSTED | SOLD_OUT | ALREADY_BOUGHT_IN_SALE | CHECKOUT_IN_PROGRESS | IDEMPOTENCY_IN_PROGRESS',
+  )
+  @ApiError(422, 'CART_EMPTY | IDEMPOTENCY_KEY_REUSED | FLASH_LIMIT')
+  @ApiError(
+    429,
+    'RATE_LIMITED (per user, at the gateway) | SERVER_BUSY (flash sale); see the Retry-After header',
+  )
+  @ApiError(
+    503,
+    'SERVICE_UNAVAILABLE (product catalog down; nothing was saved, safe to retry)',
+  )
   async place(
     @CurrentUser() user: JwtPayload,
     @Headers('idempotency-key') rawKey: string | undefined,
@@ -74,7 +118,13 @@ export class OrdersController {
     }
   }
 
+  /** My orders, newest first (from the read model) */
   @Get()
+  @ApiOkResponse({
+    description:
+      'items[] + nextCursor. Orders from the last few seconds may have syncing: true.',
+  })
+  @ApiError(400, 'INVALID_CURSOR')
   list(
     @CurrentUser() user: JwtPayload,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -83,8 +133,13 @@ export class OrdersController {
     return this.orders.listMine(user.sub, limit, cursor);
   }
 
-  /** From the read model; GET /orders/:id below stays on the write model. */
+  /**
+   * Status timeline of one order.
+   *
+   * From the read model; GET /orders/:id below stays on the write model.
+   */
   @Get(':id/tracking')
+  @ApiError(404, "ORDER_NOT_FOUND (also for other users' orders)")
   tracking(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
@@ -92,7 +147,9 @@ export class OrdersController {
     return this.orders.tracking(user.sub, id);
   }
 
+  /** One order with its items (the write model: always current) */
   @Get(':id')
+  @ApiError(404, "ORDER_NOT_FOUND (also for other users' orders)")
   async getOne(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
