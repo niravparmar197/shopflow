@@ -26,11 +26,19 @@ export function httpMetricsMiddleware(
     // CARDINALITY: never a raw URL in a label. Each distinct value is a new
     // time series; a bot hitting /random-1, /random-2… would make millions
     // and Prometheus would run out of memory.
-    const route = (req.route as { path?: string } | undefined)?.path
-      ? `${req.baseUrl ?? ''}${(req.route as { path: string }).path}` // the template: /v1/orders/:id
-      : res.statusCode === 404
-        ? 'unmatched'
-        : normalizePath(req.originalUrl); // e.g. the gateway's proxied paths
+    // A controller route gives its template (/v1/orders/:id). Middleware
+    // mounted on a path (the gateway's proxies) has the REAL path in
+    // baseUrl, so that one is normalised instead.
+    // A wildcard ({/*splat}, from catch-all middleware) is not a real route.
+    const routePath = (req.route as { path?: string } | undefined)?.path;
+    const template =
+      routePath && !routePath.includes('*') ? routePath : undefined;
+    const route =
+      template && !req.baseUrl
+        ? template // even for a 404 like "order not found"
+        : res.statusCode === 404
+          ? 'unmatched' // a flood of random URLs stays ONE series
+          : normalizePath(req.originalUrl);
     stop({ method: req.method, route, status_code: String(res.statusCode) });
   });
   next();

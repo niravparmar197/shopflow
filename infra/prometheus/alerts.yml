@@ -30,7 +30,8 @@ groups:
         annotations: { summary: "{{ $labels.group }} sent {{ $value }} {{ $labels.event_type }} message(s) to the DLQ" }
 
       - alert: ConsumerLagHigh
-        expr: sum by (consumergroup) (kafka_consumergroup_lag) > 1000
+        # Our groups only: leftover groups (old tests, tools) keep their lag forever.
+        expr: sum by (consumergroup) (kafka_consumergroup_lag{consumergroup=~"(order|inventory|payment|notification)-svc(-retry)?"}) > 1000
         for: 5m
         labels: { severity: warning }
         annotations: { summary: "{{ $labels.consumergroup }} is {{ $value }} messages behind" }

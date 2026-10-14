@@ -99,6 +99,17 @@ export abstract class KafkaConsumerCore
   }
 
   onApplicationBootstrap() {
+    // Every series exists at 0 from the start: Prometheus' increase() needs
+    // an earlier sample, so a counter that first appears at 1 reads as "no
+    // increase" and the DLQ alert would never fire.
+    for (const eventType of [...Object.keys(this.schemas), 'unknown']) {
+      for (const result of ['ok', 'duplicate', 'retry', 'dlq']) {
+        kafkaProcessed.inc(
+          { group: this.groupId, event_type: eventType, result },
+          0,
+        );
+      }
+    }
     if (!this.config.get('KAFKA_CONSUMERS_ENABLED', { infer: true })) return;
     // In the background: the service (HTTP, health) starts even while Kafka
     // is down, and the consumers join once it's back.

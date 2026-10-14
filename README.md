@@ -341,6 +341,40 @@ See [load-tests/README.md](load-tests/README.md). On one Windows laptop running 
 - Winners only reach Postgres: 10 orders × ~5 ms. Without the gate: 1,000 transactions + 1,000 events + 990 failure emails.
 - 1M users clicking within 10 s ≈ 100k req/s → autoscaled gateway and order pods, a Redis cluster, and at that size a **virtual waiting room** (queue tokens) in front of checkout.
 
+## Observability (F10)
+
+| Question                                            | Tool                                                                                                                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| What happened to THIS order, and where was it slow? | **Traces**: OpenTelemetry → Jaeger, http://localhost:16686                                                                                                  |
+| Is the system healthy right now?                    | **Metrics**: `/metrics` on every service → Prometheus (http://localhost:9091) → Grafana (http://localhost:3010, admin/admin, dashboard "ShopFlow Overview") |
+| Wake me up when it breaks                           | **Alerts**: `infra/prometheus/alerts.yml` → Alertmanager (http://localhost:9093) → email (Mailpit)                                                          |
+
+```powershell
+docker compose -f infra/docker-compose.yml up -d jaeger prometheus alertmanager kafka-exporter grafana
+```
+
+**Tracing.** Each app imports `tracing.ts` on the first line of `main.ts` (auto-instrumentation patches http, express, gRPC, pg, ioredis, MongoDB and pino as they load). The outbox breaks the call chain on purpose, so the request's trace context is saved in the event (`trace` in the envelope), restored by the relay (one PRODUCER span per message, with `shopflow.outbox_wait_ms`) and passed in the Kafka headers to the consumer's CONSUMER span; BullMQ jobs carry it the same way. Retries keep the headers, so they appear in the same trace. Every span has `shopflow.order_id`: search Jaeger by that tag to find every trace of an order (checkout, webhook, timeout job). Error responses carry `traceId`; log lines carry `trace_id`. Parent-based sampling (100 % locally): the edge decides once, everyone follows.
+
+**Metrics** (`libs/observability`):
+
+- **RED** per route: `http_server_request_duration_seconds{method,route,status_code}`. Routes are templates (`/v1/orders/:id`), never raw URLs: every distinct label value is a new time series.
+- **USE**: CPU, memory, GC, `nodejs_eventloop_lag_p99_seconds`.
+- **Async health**: `kafka_messages_processed_total{group,event_type,result}` (ok / duplicate / retry / dlq), `outbox_oldest_pending_age_seconds` (age catches "Kafka down", a count doesn't), `kafka_consumergroup_lag` (kafka-exporter), `circuit_state`, `bulkhead_calls`, `queue_jobs`.
+- **Business**: `shopflow_orders_placed_total`, `shopflow_order_transitions_total{to,reason}`, `shopflow_revenue_paise_total`, `shopflow_checkout_rejected_total{code}`, reservations, holds released, flash-gate answers, payments, webhooks, notifications, and the F8 invariant `shopflow_paid_without_reservation_total`. Counted after the DB commit, so a retried event counts once. Labels are small fixed sets, never ids (ids go in traces).
+- `/metrics` is for the internal network only: never routed by the gateway, and blocked at the edge in production (the gateway's own `/metrics` too).
+
+**Alerts**: service down, 5xx > 1 %, p95 > 800 ms, a message sent to a DLQ, consumer lag > 1,000, outbox stuck > 60 s, payment circuit open, paid without reservation, event loop blocked. Critical ones repeat every 30 min; resolved alerts are emailed too.
+
+**SLIs and SLOs**
+
+| SLI (what we measure)                           | SLO (the promise) | Error budget (30 days)        |
+| ----------------------------------------------- | ----------------- | ----------------------------- |
+| Checkout requests that are not 5xx              | 99.5 %            | 0.5 % ≈ 3.6 h of "all broken" |
+| Checkout requests under 800 ms                  | 95 %              | 5 % may be slower             |
+| Paid orders confirmed < 1 min after the webhook | 99 %              | 1 %                           |
+
+Budget almost spent → freeze risky releases and fix reliability first; plenty left → ship faster. The alerts above are the early warnings.
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |
