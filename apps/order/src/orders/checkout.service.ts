@@ -208,6 +208,7 @@ export class CheckoutService {
             items: lines.map((l) => ({
               productId: l.productId,
               quantity: l.qty,
+              name: l.name,
             })),
             totalPaise,
             currency: 'INR',

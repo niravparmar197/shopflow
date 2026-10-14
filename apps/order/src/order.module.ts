@@ -21,6 +21,8 @@ import { JobsModule } from './jobs/jobs.module';
 import { CheckoutService } from './orders/checkout.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
+import { OrderReadModelConsumer } from './read-model/order-read-model.consumer';
+import { OrderViewProjector } from './read-model/order-view.projector';
 import { SagaEventsConsumer } from './saga/saga-events.consumer';
 import { OrderSagaService } from './saga/order-saga.service';
 
@@ -66,6 +68,8 @@ import { OrderSagaService } from './saga/order-saga.service';
     IdempotencyService,
     OrderSagaService,
     SagaEventsConsumer,
+    OrderViewProjector,
+    OrderReadModelConsumer,
   ],
 })
 export class OrderModule {}

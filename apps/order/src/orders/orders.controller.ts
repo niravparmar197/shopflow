@@ -83,6 +83,15 @@ export class OrdersController {
     return this.orders.listMine(user.sub, limit, cursor);
   }
 
+  /** From the read model; GET /orders/:id below stays on the write model. */
+  @Get(':id/tracking')
+  tracking(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.orders.tracking(user.sub, id);
+  }
+
   @Get(':id')
   async getOne(
     @CurrentUser() user: JwtPayload,
