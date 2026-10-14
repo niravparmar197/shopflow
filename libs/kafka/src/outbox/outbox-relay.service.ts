@@ -5,11 +5,24 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  propagation,
+  type Span,
+  SpanKind,
+  SpanStatusCode,
+  trace,
+} from '@opentelemetry/api';
 import type { Message } from 'kafkajs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { DataSource } from 'typeorm';
 import { topicForEvent } from '@app/events';
 import type { Env } from '@app/common';
+import {
+  outboxPublished,
+  restoreTraceContext,
+  scrapeGauge,
+  tracer,
+} from '@app/observability';
 import { KafkaProducerService } from '../kafka-producer.service';
 import { OutboxEvent } from './outbox-event.entity';
 
@@ -41,6 +54,33 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
     this.enabled = config.get('OUTBOX_RELAY_ENABLED', { infer: true });
     this.intervalMs = config.get('OUTBOX_POLL_MS', { infer: true });
     this.batchSize = config.get('OUTBOX_BATCH', { infer: true });
+
+    // Computed when Prometheus scrapes. AGE, not just count: 500 events
+    // pending for 0.2 s is a busy, healthy system; 3 events pending for 5
+    // minutes means Kafka is down or the relay is stuck.
+    scrapeGauge(
+      'outbox_pending_events',
+      'Events waiting in the outbox',
+      [],
+      async (g) => {
+        const [r] = await this.ds.query<{ n: number }[]>(
+          'SELECT count(*)::int AS n FROM outbox WHERE published_at IS NULL',
+        );
+        g.set(r.n);
+      },
+    );
+    scrapeGauge(
+      'outbox_oldest_pending_age_seconds',
+      'Age of the oldest unpublished event',
+      [],
+      async (g) => {
+        const [r] = await this.ds.query<{ age: string }[]>(
+          `SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(created_at)), 0) AS age
+             FROM outbox WHERE published_at IS NULL`,
+        );
+        g.set(Number(r.age));
+      },
+    );
   }
 
   onApplicationBootstrap() {
@@ -90,15 +130,42 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
         .getMany();
       if (rows.length === 0) return 0;
 
+      // One PRODUCER span per message, child of the trace saved in the row
+      // (the request that created the event ended long ago).
       const byTopic = new Map<string, Message[]>();
+      const spans: Span[] = [];
       for (const row of rows) {
         const envelope = row.payload;
         const topic = topicForEvent(row.eventType);
+        const parent = restoreTraceContext(envelope.trace);
+        const span = tracer.startSpan(
+          `${topic} publish`,
+          {
+            kind: SpanKind.PRODUCER,
+            attributes: {
+              'messaging.system': 'kafka',
+              'messaging.destination.name': topic,
+              'messaging.message.id': row.id,
+              'shopflow.event_type': row.eventType,
+              'shopflow.order_id': row.aggregateId,
+              // How long it waited in the outbox: the gap you see in Jaeger.
+              'shopflow.outbox_wait_ms': Date.now() - row.createdAt.getTime(),
+            },
+          },
+          parent,
+        );
+        spans.push(span);
+        // THIS span's context in the Kafka headers: the consumer's span
+        // becomes its child.
+        const traceHeaders: Record<string, string> = {};
+        propagation.inject(trace.setSpan(parent, span), traceHeaders);
+
         const messages = byTopic.get(topic) ?? [];
         messages.push({
           key: row.aggregateId, // same aggregate → same partition → in order
           value: JSON.stringify(envelope),
           headers: {
+            ...traceHeaders,
             'event-id': row.id,
             'event-type': row.eventType,
             'correlation-id': envelope.correlationId ?? '',
@@ -107,9 +174,19 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
         byTopic.set(topic, messages);
       }
 
-      await this.producer.sendBatch(
-        [...byTopic].map(([topic, messages]) => ({ topic, messages })),
-      );
+      try {
+        await this.producer.sendBatch(
+          [...byTopic].map(([topic, messages]) => ({ topic, messages })),
+        );
+      } catch (err) {
+        for (const s of spans) {
+          s.recordException(err as Error);
+          s.setStatus({ code: SpanStatusCode.ERROR });
+        }
+        throw err;
+      } finally {
+        spans.forEach((s) => s.end());
+      }
       await m
         .createQueryBuilder()
         .update(OutboxEvent)
@@ -117,6 +194,7 @@ export class OutboxRelay implements OnApplicationBootstrap, OnModuleDestroy {
         .whereInIds(rows.map((r) => r.id))
         .execute();
 
+      rows.forEach((r) => outboxPublished.inc({ event_type: r.eventType }));
       this.logger.log(`Published ${rows.length} event(s)`);
       return rows.length;
     });

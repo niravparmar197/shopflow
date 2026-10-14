@@ -1,0 +1,25 @@
+# Prometheus scrapes every service's /metrics (the services run on the host,
+# so host.docker.internal) and the Kafka exporter; alert rules in alerts.yml.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files: ["alerts.yml"]
+
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["alertmanager:9093"] }]
+
+scrape_configs:
+  - job_name: shopflow
+    static_configs:
+      - targets:
+          - host.docker.internal:3000 # gateway
+          - host.docker.internal:3001 # user
+          - host.docker.internal:3002 # product
+          - host.docker.internal:3003 # order
+          - host.docker.internal:3004 # payment
+          - host.docker.internal:3005 # inventory
+          - host.docker.internal:3006 # notification
+  - job_name: kafka
+    static_configs: [{ targets: ["kafka-exporter:9308"] }]

@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { SpanKind } from '@opentelemetry/api';
 import type {
   Consumer,
   EachMessagePayload,
@@ -15,6 +16,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { ZodType } from 'zod';
 import type { Env } from '@app/common';
 import { EnvelopeSchema, type EventEnvelope } from '@app/events';
+import {
+  inSpan,
+  kafkaProcessed,
+  kafkaProcessSeconds,
+  restoreTraceContext,
+} from '@app/observability';
 import { KafkaProducerService } from '../kafka-producer.service';
 import { PoisonMessageError } from './poison-message.error';
 
@@ -72,7 +79,10 @@ export abstract class KafkaConsumerCore
   protected readonly fromBeginning: boolean = true;
 
   /** The step each subclass fills in. event.data is already validated. */
-  protected abstract processEvent(event: EventEnvelope): Promise<void>;
+  /** 'duplicate' when it was already handled (counted as such). */
+  protected abstract processEvent(
+    event: EventEnvelope,
+  ): Promise<void | 'duplicate'>;
 
   constructor(
     private readonly kafka: Kafka,
@@ -89,6 +99,17 @@ export abstract class KafkaConsumerCore
   }
 
   onApplicationBootstrap() {
+    // Every series exists at 0 from the start: Prometheus' increase() needs
+    // an earlier sample, so a counter that first appears at 1 reads as "no
+    // increase" and the DLQ alert would never fire.
+    for (const eventType of [...Object.keys(this.schemas), 'unknown']) {
+      for (const result of ['ok', 'duplicate', 'retry', 'dlq']) {
+        kafkaProcessed.inc(
+          { group: this.groupId, event_type: eventType, result },
+          0,
+        );
+      }
+    }
     if (!this.config.get('KAFKA_CONSUMERS_ENABLED', { infer: true })) return;
     // In the background: the service (HTTP, health) starts even while Kafka
     // is down, and the consumers join once it's back.
@@ -158,7 +179,7 @@ export abstract class KafkaConsumerCore
   // ---------- main topic ----------
   private async onMain({ topic, message }: EachMessagePayload) {
     try {
-      await this.process(message.value);
+      await this.process(message, topic, 0);
     } catch (err) {
       // The topic it really came from: we may read several.
       await this.routeFailure(message, toError(err), 0, topic);
@@ -182,7 +203,9 @@ export abstract class KafkaConsumerCore
     }
 
     try {
-      await this.process(message.value);
+      // Retry and DLQ messages keep the original headers (traceparent too):
+      // a retry shows up INSIDE the same trace.
+      await this.process(message, originalTopic, attempt);
       this.logger.log(`Retry attempt ${attempt} succeeded`);
     } catch (err) {
       await this.routeFailure(message, toError(err), attempt, originalTopic);
@@ -190,15 +213,57 @@ export abstract class KafkaConsumerCore
   }
 
   // ---------- the template: same steps for main and retry ----------
-  private async process(value: Buffer | null) {
-    const event = this.decode(value);
+  private async process(message: KafkaMessage, topic: string, attempt: number) {
+    const event = this.decode(message.value);
     // Other event types on these topics aren't for us: just move past them.
     // (hasOwn: a type like "constructor" must not hit Object.prototype)
     if (!Object.hasOwn(this.schemas, event.type)) return;
     const schema = this.schemas[event.type];
 
-    const data = this.parseData(schema, event);
-    await this.processEvent({ ...event, data });
+    // A CONSUMER span, child of the relay's publish span (Kafka headers), or
+    // of the trace saved in the envelope if the headers have none.
+    const fromHeaders: Record<string, string> = {};
+    for (const name of ['traceparent', 'tracestate']) {
+      const v = header(message.headers, name);
+      if (v) fromHeaders[name] = v;
+    }
+    const parent = restoreTraceContext(
+      fromHeaders.traceparent ? fromHeaders : event.trace,
+    );
+    const orderId = (event.data as { orderId?: unknown } | null)?.orderId;
+
+    await inSpan(
+      `${topic} process ${event.type}`,
+      {
+        kind: SpanKind.CONSUMER,
+        parent,
+        attributes: {
+          'messaging.system': 'kafka',
+          'messaging.destination.name': topic,
+          'messaging.consumer.group.name': this.groupId,
+          'messaging.message.id': event.eventId,
+          'shopflow.event_type': event.type,
+          // Search Jaeger by this tag to find every trace of one order.
+          'shopflow.order_id': typeof orderId === 'string' ? orderId : '',
+          'shopflow.attempt': attempt,
+        },
+      },
+      async () => {
+        const data = this.parseData(schema, event);
+        // pg / Redis / Mongo spans nest under this one.
+        const stop = kafkaProcessSeconds.startTimer({
+          group: this.groupId,
+          event_type: event.type,
+        });
+        const outcome = await this.processEvent({ ...event, data });
+        stop();
+        kafkaProcessed.inc({
+          group: this.groupId,
+          event_type: event.type,
+          result: outcome ?? 'ok',
+        });
+      },
+    );
   }
 
   private async routeFailure(
@@ -215,7 +280,13 @@ export abstract class KafkaConsumerCore
       'x-failed-at': new Date().toISOString(),
     };
 
+    const eventType = header(msg.headers, 'event-type') ?? 'unknown';
     if (poison || attempt >= RETRY_DELAYS_MS.length) {
+      kafkaProcessed.inc({
+        group: this.groupId,
+        event_type: eventType,
+        result: 'dlq',
+      });
       await this.producer.send(this.dlqTopic, [
         {
           key: msg.key,
@@ -234,6 +305,11 @@ export abstract class KafkaConsumerCore
       return;
     }
 
+    kafkaProcessed.inc({
+      group: this.groupId,
+      event_type: eventType,
+      result: 'retry',
+    });
     const delay = RETRY_DELAYS_MS[attempt];
     await this.producer.send(this.retryTopic, [
       {

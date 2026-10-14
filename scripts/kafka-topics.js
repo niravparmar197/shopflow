@@ -21,6 +21,8 @@ const TOPICS = [
   { name: 'inventory-svc.dlq', retentionMs: 14 * DAY_MS }, // longer: a human must look
   { name: 'order-svc.retry', retentionMs: 7 * DAY_MS },
   { name: 'order-svc.dlq', retentionMs: 14 * DAY_MS },
+  { name: 'order-read-model.retry', retentionMs: 7 * DAY_MS },
+  { name: 'order-read-model.dlq', retentionMs: 14 * DAY_MS },
   { name: 'payment-svc.retry', retentionMs: 7 * DAY_MS },
   { name: 'payment-svc.dlq', retentionMs: 14 * DAY_MS },
   { name: 'notification-svc.retry', retentionMs: 7 * DAY_MS },

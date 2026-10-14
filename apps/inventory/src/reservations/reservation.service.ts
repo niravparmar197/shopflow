@@ -11,6 +11,11 @@ import {
 } from '@app/events';
 import { type AfterCommit, OutboxService } from '@app/kafka';
 import { FlashSaleService } from '../flash/flash-sale.service';
+import {
+  holdsReleased,
+  paidWithoutReservation,
+  reservations,
+} from '../metrics';
 import { Stock } from '../stock/stock.entity';
 import { Reservation, ReservationStatus } from './reservation.entity';
 
@@ -99,7 +104,11 @@ export class ReservationService {
       );
       // The flash gate said yes but the DB (the final judge) said no: give
       // the buyer's tokens back, so the gate doesn't undersell.
-      return this.returnFlashTokens(order.userId, lines);
+      const giveBack = this.returnFlashTokens(order.userId, lines);
+      return async () => {
+        reservations.inc({ result: 'out_of_stock' });
+        await giveBack();
+      };
     }
     await m.query('RELEASE SAVEPOINT reserve');
 
@@ -123,10 +132,14 @@ export class ReservationService {
     this.logger.log(
       `Order ${order.orderId}: reserved ${lines.length} product(s)`,
     );
+    return () => {
+      reservations.inc({ result: 'reserved' }); // after the commit
+      return Promise.resolve();
+    };
   }
 
   /** order.paid → the items are really sold: reserved goes down, available stays. */
-  async commit(m: EntityManager, orderId: string) {
+  async commit(m: EntityManager, orderId: string): Promise<AfterCommit | void> {
     const lines = await this.moveReservations(
       m,
       orderId,
@@ -139,7 +152,10 @@ export class ReservationService {
       this.logger.error(
         `ALERT: order ${orderId} is PAID but has no RESERVED reservation (released early?). Check its stock by hand.`,
       );
-      return;
+      return () => {
+        paidWithoutReservation.inc(); // an alert fires on any increase
+        return Promise.resolve();
+      };
     }
     for (const l of lines) {
       await m
@@ -172,7 +188,12 @@ export class ReservationService {
     this.logger.log(
       `Order ${orderId}: released ${lines.length} reservation(s)`,
     );
-    if (lines.length) return this.returnFlashTokens(userId, lines);
+    if (!lines.length) return;
+    const giveBack = this.returnFlashTokens(userId, lines);
+    return async () => {
+      holdsReleased.inc({ reason: 'order_cancelled' }, lines.length);
+      await giveBack();
+    };
   }
 
   /**

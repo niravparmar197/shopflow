@@ -7,6 +7,9 @@ export const EnvelopeSchema = z.object({
   version: z.number().int().positive(), // schema version of `data`
   occurredAt: z.string(), // ISO time
   correlationId: z.string().optional(), // the HTTP request's id, one trace across services
+  // W3C traceparent/tracestate of the request that created the event. Added
+  // later, OPTIONAL: still version 1, and old events still parse.
+  trace: z.record(z.string(), z.string()).optional(),
   data: z.unknown(),
 });
 

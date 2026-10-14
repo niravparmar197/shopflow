@@ -119,10 +119,11 @@ describe('Order saga (e2e)', () => {
     return { orderId, userId: user_id };
   }
 
+  // The saga's group only: order-read-model handles payment events too.
   const handled = async (eventId: string) =>
     (
       await ds.query<unknown[]>(
-        'SELECT 1 FROM processed_events WHERE event_id = $1',
+        `SELECT 1 FROM processed_events WHERE consumer = 'order-svc' AND event_id = $1`,
         [eventId],
       )
     ).length === 1;

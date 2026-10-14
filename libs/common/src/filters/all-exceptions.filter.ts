@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { currentTraceId } from '@app/observability';
 
 // Set by pino-http from the x-correlation-id header (see CommonModule).
 function correlationIdOf(req: Request): string {
@@ -30,6 +31,7 @@ export function sendError(
     message,
     ...(extra.details === undefined ? {} : { details: extra.details }),
     correlationId: correlationIdOf(req),
+    traceId: currentTraceId(),
   };
   res.status(status).json(payload);
 }
@@ -39,6 +41,8 @@ export interface ErrorResponse {
   message: string;
   details?: unknown; // validation messages, or extra data an exception adds
   correlationId: string;
+  // Paste it into Jaeger to see exactly what happened (absent if not traced).
+  traceId?: string;
 }
 
 // Turns every error into one shape: { code, message, details, correlationId }.
@@ -85,6 +89,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? message
         : (body as { details?: unknown } | null)?.details,
       correlationId,
+      traceId: currentTraceId(),
     };
     // An error that says when to retry (e.g. 429 SERVER_BUSY) also gets the
     // standard header, which clients and load tools understand.

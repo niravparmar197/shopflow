@@ -40,21 +40,24 @@ export abstract class BaseConsumer extends KafkaConsumerCore {
   }
 
   protected async processEvent(event: EventEnvelope) {
-    const after = await this.ds.transaction(async (m) => {
-      const fresh = await m
-        .createQueryBuilder()
-        .insert()
-        .into(ProcessedEvent)
-        .values({ consumer: this.groupId, eventId: event.eventId })
-        .orIgnore()
-        .returning(['eventId'])
-        .execute();
-      if ((fresh.raw as unknown[]).length === 0) {
-        this.logger.warn(`Duplicate ${event.type} ${event.eventId}, skipped`);
-        return undefined;
-      }
-      return this.handle(m, event);
-    });
+    const after = await this.ds.transaction(
+      async (m): Promise<AfterCommit | 'duplicate' | void> => {
+        const fresh = await m
+          .createQueryBuilder()
+          .insert()
+          .into(ProcessedEvent)
+          .values({ consumer: this.groupId, eventId: event.eventId })
+          .orIgnore()
+          .returning(['eventId'])
+          .execute();
+        if ((fresh.raw as unknown[]).length === 0) {
+          this.logger.warn(`Duplicate ${event.type} ${event.eventId}, skipped`);
+          return 'duplicate';
+        }
+        return this.handle(m, event);
+      },
+    );
+    if (after === 'duplicate') return 'duplicate';
 
     if (after) {
       // Once, after the commit. A crash right here loses it: choose side

@@ -14,6 +14,7 @@ import type { CartLine } from '../cart/cart.service';
 import { CatalogClient } from '../catalog/catalog.client';
 import { CouponsService } from '../coupons/coupons.service';
 import { FlashGateClient } from '../flash/flash-gate.client';
+import { checkoutRejected, ordersPlaced } from '../metrics';
 import { OrderItem } from './order-item.entity';
 import { Order } from './order.entity';
 import { OrderStatus } from './order-status';
@@ -90,7 +91,13 @@ export class CheckoutService {
       await sleep(LOCK_POLL_MS);
     }
     try {
-      return await this.checkoutLocked(userId, input, options);
+      const order = await this.checkoutLocked(userId, input, options);
+      ordersPlaced.inc();
+      return order;
+    } catch (err) {
+      const code = (err as { response?: { code?: unknown } }).response?.code;
+      checkoutRejected.inc({ code: typeof code === 'string' ? code : 'ERROR' });
+      throw err;
     } finally {
       await this.cart
         .unlockCheckout(userId, token)
@@ -201,6 +208,7 @@ export class CheckoutService {
             items: lines.map((l) => ({
               productId: l.productId,
               quantity: l.qty,
+              name: l.name,
             })),
             totalPaise,
             currency: 'INR',

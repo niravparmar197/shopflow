@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
+import { MetricsModule } from '@app/observability';
 import { Env, validateEnv } from './config/env.schema';
 import { HealthModule } from './health/health.module';
 
@@ -71,6 +72,7 @@ export class CommonModule {
           },
         }),
         HealthModule,
+        MetricsModule, // GET /metrics for Prometheus
       ],
       exports: [ConfigModule, LoggerModule],
     };

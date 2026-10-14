@@ -7,6 +7,7 @@ import { type Env, REDIS } from '@app/common';
 import { type OrderCancelledV1, OrderEvents } from '@app/events';
 import { OutboxService } from '@app/kafka';
 import { type JobContext, LeaderJob } from '@app/scheduler';
+import { orderTransitions } from '../metrics';
 import { Order } from '../orders/order.entity';
 import { OrderStatus } from '../orders/order-status';
 
@@ -78,7 +79,7 @@ export class OrderExpiryJob extends LeaderJob {
 
   /** One batch in one short transaction. Public for tests. */
   async expireBatch(rule: ExpiryRule): Promise<number> {
-    return this.ds.transaction(async (m) => {
+    const n = await this.ds.transaction(async (m) => {
       const repo = m.getRepository(Order);
       const due = await repo
         .createQueryBuilder('o')
@@ -117,5 +118,8 @@ export class OrderExpiryJob extends LeaderJob {
       }
       return due.length;
     });
+    // After the commit.
+    if (n) orderTransitions.inc({ to: 'CANCELLED', reason: rule.reason }, n);
+    return n;
   }
 }

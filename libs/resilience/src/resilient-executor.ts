@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import { Gauge } from 'prom-client';
+import { getOrCreate, registry } from '@app/observability';
 import CircuitBreaker from 'opossum';
 import pRetry, { AbortError } from 'p-retry';
 import { CircuitOpenError, isRetryable } from './errors';
@@ -29,6 +31,17 @@ export const DEFAULT_RESILIENCE: ResilienceOptions = {
 };
 
 export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+const circuitState = getOrCreate(
+  'circuit_state',
+  () =>
+    new Gauge({
+      name: 'circuit_state',
+      help: '0 closed, 1 half-open, 2 open',
+      labelNames: ['dependency'],
+      registers: [registry],
+    }),
+);
 
 /*
  * retry (backoff + jitter, temporary errors only)
@@ -63,6 +76,12 @@ export class ResilientExecutor {
       errorFilter: (err) => !isRetryable(err),
     });
 
+    circuitState.set({ dependency: name }, 0);
+    this.breaker.on('open', () => circuitState.set({ dependency: name }, 2));
+    this.breaker.on('halfOpen', () =>
+      circuitState.set({ dependency: name }, 1),
+    );
+    this.breaker.on('close', () => circuitState.set({ dependency: name }, 0));
     this.breaker.on('open', () =>
       this.logger.error(
         `Circuit OPEN: failing fast for ${opts.resetTimeoutMs / 1000}s`,

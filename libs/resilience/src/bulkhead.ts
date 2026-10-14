@@ -1,3 +1,21 @@
+import { scrapeGauge } from '@app/observability';
+
+/** Every bulkhead in the process, reported by one gauge at scrape time. */
+const bulkheads = new Set<Bulkhead>();
+scrapeGauge(
+  'bulkhead_calls',
+  'Bulkhead calls in flight and waiting',
+  ['bulkhead', 'state'],
+  (g) => {
+    for (const b of bulkheads) {
+      const { active, waiting } = b.stats();
+      g.set({ bulkhead: b.name, state: 'active' }, active);
+      g.set({ bulkhead: b.name, state: 'waiting' }, waiting);
+    }
+    return Promise.resolve();
+  },
+);
+
 export class BulkheadFullError extends Error {
   constructor(readonly bulkhead: string) {
     super(`Bulkhead "${bulkhead}" is full`);
@@ -25,10 +43,12 @@ export class Bulkhead {
   private readonly waiting: (() => void)[] = [];
 
   constructor(
-    private readonly name: string,
+    readonly name: string,
     private readonly maxConcurrent: number,
     private readonly maxQueue: number,
-  ) {}
+  ) {
+    bulkheads.add(this);
+  }
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.active >= this.maxConcurrent) {

@@ -11,6 +11,9 @@ export const OrderEvents = {
 const OrderItem = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().positive(),
+  // Added later, so optional (still v1): the order read model shows
+  // "Phone + 2 more" without asking the product service.
+  name: z.string().optional(),
 });
 
 export const OrderCreatedV1Schema = z.object({

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { EntityManager } from 'typeorm';
 import { EventEnvelope, topicForEvent } from '@app/events';
+import { captureTraceContext } from '@app/observability';
 import { OutboxEvent } from './outbox-event.entity';
 
 export interface NewOutboxEvent<T extends object> {
@@ -36,6 +37,9 @@ export class OutboxService {
       version: event.version ?? 1,
       occurredAt: new Date().toISOString(),
       correlationId: event.correlationId,
+      // The request's trace, saved with the row: the relay publishes later,
+      // in another loop, and restores it from here.
+      trace: captureTraceContext(),
       data: event.data,
     };
     await manager.getRepository(OutboxEvent).insert({

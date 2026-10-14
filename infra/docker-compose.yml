@@ -65,13 +65,36 @@ services:
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: shopflow-prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--web.enable-lifecycle"]
     ports: ["9091:9090"]          # was 9090:9090
-    volumes: [./prometheus.yml:/etc/prometheus/prometheus.yml]
+    volumes: ["./prometheus:/etc/prometheus:ro"] # config + alert rules
+    extra_hosts: ["host.docker.internal:host-gateway"] # the services run on the host
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: shopflow-alertmanager
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    ports: ["9093:9093"]
+    volumes: ["./alertmanager:/etc/alertmanager:ro"]
+    depends_on: [mailpit]
+
+  kafka-exporter: # consumer lag per group
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: shopflow-kafka-exporter
+    command: ["--kafka.server=kafka:29092"]
+    ports: ["9308:9308"]
+    depends_on: [kafka]
+    restart: unless-stopped # until Kafka is reachable
 
   grafana:
     image: grafana/grafana:11.2.0
     container_name: shopflow-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin # local only
     ports: ["3010:3000"]
+    volumes: # datasource + dashboards as code
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
 
   # ---------- Email testing ----------
   mailpit:

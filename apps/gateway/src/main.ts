@@ -1,3 +1,4 @@
+import './tracing'; // MUST stay first: see tracing.ts
 import { ConfigService } from '@nestjs/config';
 import { bootstrapService, Env } from '@app/common';
 import { GatewayModule } from './gateway.module';

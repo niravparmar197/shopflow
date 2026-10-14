@@ -5,6 +5,7 @@ import type Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 import { type Env, REDIS } from '@app/common';
 import { type JobContext, LeaderJob } from '@app/scheduler';
+import { holdsReleased } from '../metrics';
 import { ReservationService } from '../reservations/reservation.service';
 
 const BATCH = 100;
@@ -42,9 +43,11 @@ export class ReservationExpiryJob extends LeaderJob {
   }
 
   /** One batch in one short transaction. Public for tests. */
-  releaseBatch(): Promise<number> {
-    return this.ds.transaction((m) =>
+  async releaseBatch(): Promise<number> {
+    const n = await this.ds.transaction((m) =>
       this.reservations.releaseExpired(m, BATCH),
     );
+    if (n) holdsReleased.inc({ reason: 'hold_expired' }, n); // after commit
+    return n;
   }
 }

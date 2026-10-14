@@ -24,6 +24,7 @@ export function topicForEvent(type: string): string {
 export const CONSUMER_GROUPS = [
   'inventory-svc',
   'order-svc',
+  'order-read-model', // order_views projection (CQRS), rebuilt on its own
   'payment-svc',
   'notification-svc',
 ] as const;

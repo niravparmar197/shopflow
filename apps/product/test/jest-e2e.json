@@ -5,7 +5,9 @@
   "transform": {
     "node_modules.mongodb.lib.runtime_adapters\\.js$": [
       "babel-jest",
-      { "plugins": ["./tools/jest/dynamic-import-to-require.js"] }
+      {
+        "plugins": ["./tools/jest/dynamic-import-to-require.js"]
+      }
     ],
     "node_modules.@nestjs.(config|jwt|mapped-types|mongoose|terminus|typeorm).+\\.js$": [
       "babel-jest",
@@ -25,7 +27,8 @@
   "testEnvironment": "node",
   "moduleNameMapper": {
     "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
-    "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1"
+    "^@app/proto(|/.*)$": "<rootDir>/libs/proto/src/$1",
+    "^@app/observability(|/.*)$": "<rootDir>/libs/observability/src/$1"
   },
   "testTimeout": 120000,
   "globalSetup": "<rootDir>/apps/product/test/e2e-setup.ts",

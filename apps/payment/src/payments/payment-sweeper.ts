@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 import type { Env } from '@app/common';
 import { PaymentEvents, type PaymentFailedV1 } from '@app/events';
 import { OutboxService } from '@app/kafka';
+import { payments } from '../metrics';
 import { Payment } from './payment.entity';
 import { assertTransition, PaymentStatus } from './payment-status';
 import { RefundService } from './refund.service';
@@ -72,7 +73,7 @@ export class PaymentSweeper implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   async expireDue(): Promise<number> {
-    return this.ds.transaction(async (m) => {
+    const n = await this.ds.transaction(async (m) => {
       const repo = m.getRepository(Payment);
       const due = await repo
         .createQueryBuilder('p')
@@ -103,5 +104,7 @@ export class PaymentSweeper implements OnApplicationBootstrap, OnModuleDestroy {
       }
       return due.length;
     });
+    if (n) payments.inc({ outcome: 'expired' }, n); // after the commit
+    return n;
   }
 }

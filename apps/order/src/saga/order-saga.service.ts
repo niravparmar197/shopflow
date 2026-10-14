@@ -11,9 +11,23 @@ import {
   type StockFailedV1,
   type StockReservedV1,
 } from '@app/events';
-import { OutboxService, PoisonMessageError } from '@app/kafka';
+import {
+  type AfterCommit,
+  OutboxService,
+  PoisonMessageError,
+} from '@app/kafka';
 import { Order } from '../orders/order.entity';
 import type { OrderAction } from '../orders/order-status';
+import { orderTransitions, revenuePaise } from '../metrics';
+
+/** Counted after the commit: a rolled-back, retried event counts once. */
+const count =
+  (to: string, reason = '', paidPaise = 0): AfterCommit =>
+  () => {
+    orderTransitions.inc({ to, reason });
+    if (paidPaise) revenuePaise.inc(paidPaise);
+    return Promise.resolve();
+  };
 
 /**
  * The order's side of the saga (choreography: each service reacts to the
@@ -57,6 +71,7 @@ export class OrderSagaService {
       },
     });
     this.logger.log(`Order ${order.id} → CONFIRMED`);
+    return count('CONFIRMED');
   }
 
   async onStockFailed(
@@ -77,6 +92,7 @@ export class OrderSagaService {
       data: { orderId: order.id, userId: order.userId, reason: data.reason },
     });
     this.logger.warn(`Order ${order.id} → FAILED (${data.reason})`);
+    return count('FAILED', data.reason);
   }
 
   async onPaymentSucceeded(
@@ -102,6 +118,7 @@ export class OrderSagaService {
       },
     });
     this.logger.log(`Order ${order.id} → PAID`);
+    return count('PAID', '', order.totalPaise);
   }
 
   async onPaymentFailed(
@@ -122,6 +139,7 @@ export class OrderSagaService {
       data: { orderId: order.id, userId: order.userId, reason: data.reason },
     });
     this.logger.warn(`Order ${order.id} → CANCELLED (${data.reason})`);
+    return count('CANCELLED', data.reason);
   }
 
   // Row lock: other writers (the expiry job in F8) may change the same order

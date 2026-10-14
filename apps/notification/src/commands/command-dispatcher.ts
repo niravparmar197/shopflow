@@ -5,6 +5,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import type { Queue } from 'bullmq';
 import { Model } from 'mongoose';
 import type { Env } from '@app/common';
+import { captureTraceContext, scrapeGauge } from '@app/observability';
 import { NotificationLog } from '../logs/notification-log.schema';
 import {
   DEFAULT_JOB_OPTIONS,
@@ -24,6 +25,23 @@ export class CommandDispatcher {
     config: ConfigService<Env, true>,
   ) {
     this.backoffMs = config.get('NOTIFY_BACKOFF_MS', { infer: true });
+    // Queue depth by state, read from Redis when Prometheus scrapes.
+    scrapeGauge(
+      'queue_jobs',
+      'BullMQ jobs by state',
+      ['queue', 'state'],
+      async (g) => {
+        const counts = await this.queue.getJobCounts(
+          'waiting',
+          'active',
+          'delayed',
+          'failed',
+        );
+        for (const [state, n] of Object.entries(counts)) {
+          g.set({ queue: NOTIFICATIONS_QUEUE, state }, n);
+        }
+      },
+    );
   }
 
   /**
@@ -38,7 +56,8 @@ export class CommandDispatcher {
     // log is written (or we crash first), and must be able to create it.
     await this.queue.add(
       cmd.jobName,
-      { ...cmd.payload, log: cmd.log },
+      // + the trace: the worker continues it (BullMQ has no auto-tracing).
+      { ...cmd.payload, log: cmd.log, trace: captureTraceContext() },
       {
         ...DEFAULT_JOB_OPTIONS,
         backoff: { type: 'exponential', delay: this.backoffMs },
