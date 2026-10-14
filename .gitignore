@@ -61,3 +61,6 @@ keys/
 
 # Load-test user tokens (scripts/make-test-tokens.js): signed with the dev key
 load-tests/.data/
+
+# Compose env files with real secrets (commit only the .env.example copies)
+infra/env/*.env

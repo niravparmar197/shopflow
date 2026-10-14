@@ -1,11 +1,11 @@
 import type { Options } from '@grpc/proto-loader';
 import { join } from 'node:path';
 
-// Services run from the repo root (they read keys/ and apps/*/.env the same way).
-export const PRODUCT_PROTO_PATH = join(
-  process.cwd(),
-  'libs/proto/src/product.proto',
-);
+// Locally services run from the repo root (they read keys/ and apps/*/.env
+// the same way). The Docker image has no libs/ and sets PROTO_DIR=/app/proto.
+const PROTO_DIR =
+  process.env.PROTO_DIR ?? join(process.cwd(), 'libs/proto/src');
+export const PRODUCT_PROTO_PATH = join(PROTO_DIR, 'product.proto');
 
 // How the .proto is loaded at runtime, on both the server and client side.
 export const grpcLoaderOptions: Options = {

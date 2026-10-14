@@ -390,6 +390,26 @@ Budget almost spent → freeze risky releases and fix reliability first; plenty 
 
 Tested in `read-model.e2e-spec.ts`: events fed out of order, cancel then late payment + refund, read-your-writes before and after projection, and someone else's order → 404.
 
+## Production images (F11)
+
+One `Dockerfile` for all 7 services: multi-stage (dev deps stay in the build stage), `node:22-bookworm-slim` pinned (glibc, for bcrypt), non-root `node` user, `tini` as PID 1 so `SIGTERM` reaches Node, and a `HEALTHCHECK` on `/health/live`. No secrets in the image: env comes from `infra/env/*.env`, JWT keys are mounted at `/run/keys`.
+
+```powershell
+foreach ($a in 'gateway','user','product','order','inventory','payment','notification') {
+  docker build --build-arg APP=$a -t "shopflow/${a}:dev" .; if ($LASTEXITCODE) { throw $a }
+}
+# infra/env/*.env from the .env.example files next to them, then:
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -d
+./scripts/smoke.ps1
+```
+
+- **Migrations are a release step, not a boot step**: `node dist/main.js migrate` applies pending migrations and exits (compose runs `*-migrate` jobs before the apps). A Postgres advisory lock means only one runner works at a time, however many start. Migrations are listed in `database/migrations/index.ts` (the bundle has no files to glob); a unit test fails if a migration file is missing there.
+- **Expand / contract**: the old version keeps serving during a rolling deploy, so every migration must work with both. Add a column as nullable (or with a default) first; drop or rename only one release after nothing reads the old one.
+- **Graceful shutdown**: on `SIGTERM`, `/health/ready` returns 503 `SHUTTING_DOWN` at once (the load balancer drains), then Nest's shutdown hooks finish the relay batch / consumer message / job and close connections.
+- Only the gateway publishes a port; services reach each other by compose name (`http://order:3000`, `product:50052`).
+- Local compose runs payment with `NODE_ENV=development` and the fake provider; production refuses the fake provider.
+- Known trade-off: every image carries the whole monorepo's production `node_modules`. Per-app pruning (e.g. `turbo prune`) is the next step.
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |

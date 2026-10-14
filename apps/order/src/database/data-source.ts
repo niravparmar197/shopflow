@@ -1,6 +1,7 @@
 // DataSource for the TypeORM CLI (migration:generate / run / revert).
 // The running service configures TypeORM in order.module.ts instead.
 import { DataSource } from 'typeorm';
+import { MIGRATIONS } from './migrations';
 import { ORDER_ENTITIES } from './entities';
 
 try {
@@ -17,6 +18,6 @@ export default new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
   entities: ORDER_ENTITIES,
-  migrations: ['apps/order/src/database/migrations/*.ts'],
+  migrations: MIGRATIONS,
   migrationsTableName: 'migrations',
 });

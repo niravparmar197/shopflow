@@ -1,6 +1,7 @@
 // DataSource for the TypeORM CLI (migration:generate / run / revert).
 // The running service configures TypeORM in payment.module.ts instead.
 import { DataSource } from 'typeorm';
+import { MIGRATIONS } from './migrations';
 import { PAYMENT_ENTITIES } from './entities';
 
 try {
@@ -17,6 +18,6 @@ export default new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
   entities: PAYMENT_ENTITIES,
-  migrations: ['apps/payment/src/database/migrations/*.ts'],
+  migrations: MIGRATIONS,
   migrationsTableName: 'migrations',
 });

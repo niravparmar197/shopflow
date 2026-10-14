@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import {
   HealthCheck,
   HealthCheckService,
@@ -6,6 +6,15 @@ import {
 } from '@nestjs/terminus';
 
 const HEAP_LIMIT_BYTES = 512 * 1024 * 1024;
+
+// On SIGTERM (ECS / compose stopping the container) readiness turns "no" at
+// once, so the load balancer drains this target while enableShutdownHooks()
+// finishes in-flight work and closes connections. Liveness stays "yes": the
+// process is still healthy, just leaving.
+let shuttingDown = false;
+process.once('SIGTERM', () => {
+  shuttingDown = true;
+});
 
 @Controller('health')
 export class HealthController {
@@ -26,6 +35,12 @@ export class HealthController {
   @Get('ready')
   @HealthCheck()
   ready() {
+    if (shuttingDown) {
+      throw new ServiceUnavailableException({
+        code: 'SHUTTING_DOWN',
+        message: 'Draining',
+      });
+    }
     return this.health.check([
       () => this.memory.checkHeap('memory_heap', HEAP_LIMIT_BYTES),
     ]);
