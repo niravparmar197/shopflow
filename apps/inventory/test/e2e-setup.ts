@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 import { startKafka } from '../../../test/helpers/kafka';
 import { INVENTORY_ENTITIES } from '../src/database/entities';
+import { MIGRATIONS } from '../src/database/migrations';
 
 // Runs once before the e2e suite: a real PostgreSQL (with the real
 // migrations) and a real Kafka in Docker. Migrations run here, before any
@@ -24,7 +25,7 @@ export default async function setup() {
     type: 'postgres',
     url: pg.getConnectionUri(),
     entities: INVENTORY_ENTITIES,
-    migrations: [join(__dirname, '../src/database/migrations/*.ts')],
+    migrations: MIGRATIONS,
   });
   await ds.initialize();
   const ran = await ds.runMigrations();

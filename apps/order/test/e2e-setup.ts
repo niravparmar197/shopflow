@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 import { ORDER_ENTITIES } from '../src/database/entities';
+import { MIGRATIONS } from '../src/database/migrations';
 
 // Runs once before the e2e suite: a real PostgreSQL (with the real
 // migrations) and Redis in Docker, plus throwaway JWT keys. Everything
@@ -22,7 +23,7 @@ export default async function setup() {
     type: 'postgres',
     url: pg.getConnectionUri(),
     entities: ORDER_ENTITIES,
-    migrations: [join(__dirname, '../src/database/migrations/*.ts')],
+    migrations: MIGRATIONS,
   });
   await ds.initialize();
   const ran = await ds.runMigrations();

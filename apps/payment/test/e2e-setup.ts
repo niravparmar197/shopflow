@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 import { startKafka } from '../../../test/helpers/kafka';
 import { PAYMENT_ENTITIES } from '../src/database/entities';
+import { MIGRATIONS } from '../src/database/migrations';
 
 const FAKE_SECRET = 'test-fake-webhook-secret';
 
@@ -23,7 +24,7 @@ export default async function setup() {
     type: 'postgres',
     url: pg.getConnectionUri(),
     entities: PAYMENT_ENTITIES,
-    migrations: [join(__dirname, '../src/database/migrations/*.ts')],
+    migrations: MIGRATIONS,
   });
   await ds.initialize();
   const ran = await ds.runMigrations();

@@ -1,6 +1,7 @@
 // DataSource for the TypeORM CLI (migration:generate / run / revert).
 // The running service configures TypeORM in inventory.module.ts instead.
 import { DataSource } from 'typeorm';
+import { MIGRATIONS } from './migrations';
 import { INVENTORY_ENTITIES } from './entities';
 
 try {
@@ -17,6 +18,6 @@ export default new DataSource({
   type: 'postgres',
   url: process.env.DATABASE_URL,
   entities: INVENTORY_ENTITIES,
-  migrations: ['apps/inventory/src/database/migrations/*.ts'],
+  migrations: MIGRATIONS,
   migrationsTableName: 'migrations',
 });

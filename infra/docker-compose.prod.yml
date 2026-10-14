@@ -1,0 +1,88 @@
+# The 7 services as production images, on top of the infra compose:
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -d
+# Build the images first (README "Production images"). Env: infra/env/*.env,
+# copied from the .env.example files next to them.
+
+x-app: &app
+  restart: unless-stopped
+  stop_grace_period: 30s # time to drain before a hard kill
+  volumes:
+    - ../keys:/run/keys:ro # JWT keys mounted read-only, never baked into the image
+
+x-migrate: &migrate
+  restart: "no"
+  command: ["node", "dist/main.js", "migrate"]
+  depends_on:
+    postgres: { condition: service_healthy }
+
+services:
+  # ---- one-off jobs (run, then exit 0) ----
+  user-migrate: { <<: *migrate, image: shopflow/user:dev, env_file: env/user.env }
+  order-migrate: { <<: *migrate, image: shopflow/order:dev, env_file: env/order.env }
+  inventory-migrate: { <<: *migrate, image: shopflow/inventory:dev, env_file: env/inventory.env }
+  payment-migrate: { <<: *migrate, image: shopflow/payment:dev, env_file: env/payment.env }
+
+  # Topics with their retention, plus the per-group retry/DLQ topics. Reuses an
+  # app image for Node + kafkajs; the script itself is mounted.
+  kafka-topics:
+    image: shopflow/order:dev
+    restart: "no"
+    command: ["node", "/scripts/kafka-topics.js"]
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      NODE_PATH: /app/node_modules
+    volumes: ["../scripts:/scripts:ro"]
+    depends_on: [kafka]
+
+  # ---- apps (NO ports published, except the gateway) ----
+  # A service's own depends_on replaces any inherited one, so each lists all.
+  user:
+    <<: *app
+    image: shopflow/user:dev
+    env_file: env/user.env
+    depends_on:
+      redis: { condition: service_started }
+      user-migrate: { condition: service_completed_successfully }
+  product:
+    <<: *app
+    image: shopflow/product:dev
+    env_file: env/product.env
+    depends_on: [mongo, redis, minio]
+  order:
+    <<: *app
+    image: shopflow/order:dev
+    env_file: env/order.env
+    depends_on:
+      redis: { condition: service_started }
+      order-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully }
+  inventory:
+    <<: *app
+    image: shopflow/inventory:dev
+    env_file: env/inventory.env
+    depends_on:
+      redis: { condition: service_started }
+      inventory-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully }
+  payment:
+    <<: *app
+    image: shopflow/payment:dev
+    env_file: env/payment.env
+    depends_on:
+      payment-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully }
+  notification:
+    <<: *app
+    image: shopflow/notification:dev
+    env_file: env/notification.env
+    depends_on:
+      mongo: { condition: service_started }
+      redis: { condition: service_started }
+      mailpit: { condition: service_started }
+      kafka-topics: { condition: service_completed_successfully }
+  gateway:
+    <<: *app
+    image: shopflow/gateway:dev
+    env_file: env/gateway.env
+    ports: ["3000:3000"] # the ONLY public entry point
+    depends_on: [redis, user, product, order, inventory, payment, notification]

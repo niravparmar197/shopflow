@@ -12,3 +12,4 @@ export * from './filters/grpc-exception.filter';
 export * from './redis/redis.module';
 export * from './cache/cache.module';
 export * from './cache/cache.service';
+export * from './database/migrate';
