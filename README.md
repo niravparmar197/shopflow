@@ -375,6 +375,21 @@ docker compose -f infra/docker-compose.yml up -d jaeger prometheus alertmanager 
 
 Budget almost spent → freeze risky releases and fix reliability first; plenty left → ship faster. The alerts above are the early warnings.
 
+**Runbook**: every alert has a first look and a usual fix in [`docs/runbook.md`](docs/runbook.md). Design notes: [ADR 0004](docs/adr/0004-observability-and-read-model.md).
+
+**Tests** (`apps/order/test`): `tracing.e2e-spec.ts` uses an in-memory span exporter to prove that one trace survives outbox → Kafka → consumer → outbox → Kafka, with the right parent/child links. `read-model.e2e-spec.ts` checks `/metrics` (route templates, no raw ids, one `unmatched` series for junk URLs, business counters).
+
+## My orders (CQRS read model)
+
+`order_views` is one flat row per order, built from order-events and payment-events (consumer group `order-read-model`): status, payment status, title ("Phone + 2 more"), totals and a timeline. `GET /v1/orders?limit=&cursor=` and `GET /v1/orders/:id/tracking` read it, with no join and no call to the payment service.
+
+- **Out of order is fine**: every event upserts; a payment event that arrives before `order.created` makes a hidden placeholder that is filled in later.
+- **Never backwards**: the status moves by rank (PENDING → CONFIRMED → PAID/FAILED/CANCELLED), not by timestamp, so a late `order.confirmed` can't undo PAID. A refund is the payment's last word.
+- **Read-your-writes**: orders from the last 30 s that the view hasn't caught up with come from the orders table (`syncing: true`), paged together with the view under one cursor, and never listed twice.
+- **Rebuild**: `scripts/rebuild-order-views.ps1` replays the topics; `scripts/backfill-order-views.sql` covers orders older than the topic retention.
+
+Tested in `read-model.e2e-spec.ts`: events fed out of order, cancel then late payment + refund, read-your-writes before and after projection, and someone else's order → 404.
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |
