@@ -1,0 +1,109 @@
+name: deploy-stage1
+
+# After release-images pushed all 7 images for a commit on main, deploy that commit
+# to the Stage 1 box. Manual run: Actions -> deploy-stage1 -> Run workflow (any
+# image tag already in ECR, e.g. to roll back to an older commit).
+on:
+  workflow_run:
+    workflows: [release-images]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (full git SHA) to deploy"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-stage1
+  cancel-in-progress: false # never stop a deploy half-way
+
+jobs:
+  deploy:
+    # Auto: only when the release run succeeded. Manual: always.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: stage1 # optional: add a required reviewer in repo Settings -> Environments
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_sha }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      INSTANCE_ID: ${{ vars.STAGE1_INSTANCE_ID }}
+      DEPLOY_BUCKET: ${{ vars.DEPLOY_BUCKET }}
+      DOMAIN: ${{ vars.STAGE1_DOMAIN }}
+    steps:
+      # The bundle (compose, Caddyfile, configs) must match the images: same commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: AWS credentials (least-privilege CI user)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Check settings
+        run: |
+          for v in AWS_REGION INSTANCE_ID DEPLOY_BUCKET DOMAIN TAG; do
+            [ -n "${!v}" ] || { echo "::error::$v is empty (GitHub repo variables)"; exit 1; }
+          done
+          echo "Deploying $TAG to $INSTANCE_ID ($DOMAIN)"
+
+      - name: Package + upload the bundle
+        run: |
+          bash deploy/stage1/package.sh "out/$TAG.tgz"
+          aws s3 cp "out/$TAG.tgz" "s3://$DEPLOY_BUCKET/stage1/$TAG.tgz" --only-show-errors
+
+      # No SSH: SSM Run Command executes deploy.sh on the box as root.
+      - name: Run deploy.sh on the box (SSM)
+        run: |
+          set -euo pipefail
+          SCRIPT=$(cat <<SH
+          set -e
+          rm -rf /tmp/shopflow-bundle && mkdir -p /tmp/shopflow-bundle
+          aws s3 cp s3://$DEPLOY_BUCKET/stage1/$TAG.tgz /tmp/shopflow-bundle.tgz --region $AWS_REGION --only-show-errors
+          tar -xzf /tmp/shopflow-bundle.tgz -C /tmp/shopflow-bundle
+          bash /tmp/shopflow-bundle/deploy.sh $TAG
+          SH
+          )
+          PARAMS=$(jq -n --arg s "$SCRIPT" '{commands: ($s | split("\n") | map(select(length > 0))), executionTimeout: ["1200"]}')
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy $TAG" \
+            --timeout-seconds 120 \
+            --parameters "$PARAMS" \
+            --query Command.CommandId --output text)
+          echo "SSM command: $CMD_ID"
+
+          # Poll until it finishes (the CLI waiter gives up after ~100 s).
+          for i in $(seq 1 120); do
+            sleep 10
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            echo "[$i] $STATUS"
+            case "$STATUS" in Pending|InProgress|Delayed) continue ;; *) break ;; esac
+          done
+
+          echo "::group::deploy.sh output"
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text
+          echo "::endgroup::"
+          ERR=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text)
+          [ -n "$ERR" ] && [ "$ERR" != "None" ] && { echo "::group::stderr"; echo "$ERR"; echo "::endgroup::"; }
+          [ "$STATUS" = "Success" ] || { echo "::error::deploy $STATUS (the box rolled back if it could)"; exit 1; }
+
+      # Same check a user would do: real DNS, real certificate, from outside AWS.
+      - name: Smoke test from the internet
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 10 "https://$DOMAIN/health/ready"; then echo; echo "LIVE: https://$DOMAIN"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::https://$DOMAIN/health/ready did not answer"; exit 1

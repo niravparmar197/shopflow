@@ -17,7 +17,9 @@ import { NotificationsModule } from './notifications.module';
         uri: config.getOrThrow('MONGO_URL', { infer: true }),
         maxPoolSize: 10,
         // Build indexes on startup outside production (as in product).
-        autoIndex: config.get('NODE_ENV', { infer: true }) !== 'production',
+        autoIndex:
+          config.get('MONGO_AUTO_INDEX', { infer: true }) ??
+          config.get('NODE_ENV', { infer: true }) !== 'production',
       }),
     }),
     BullModule.forRootAsync({

@@ -1,0 +1,24 @@
+# Stage 1: services are compose containers on the same network (not host.docker.internal).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files: ["alerts.yml"] # copied from infra/prometheus/alerts.yml by package.sh
+
+alerting:
+  alertmanagers:
+    - static_configs: [{ targets: ["alertmanager:9093"] }]
+
+scrape_configs:
+  - job_name: shopflow
+    static_configs:
+      - targets:
+          - gateway:3000
+          - user:3000
+          - product:3000
+          - order:3000
+          - payment:3000
+          - inventory:3000
+          - notification:3000
+  - job_name: kafka
+    static_configs: [{ targets: ["kafka-exporter:9308"] }]
