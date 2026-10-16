@@ -13,12 +13,14 @@ import type { NextFunction, Request, Response } from 'express';
  * - Observable: every response says which colour served it (x-served-by) and
  *   is counted per colour + status class.
  */
-// Proxy handlers (http-proxy-middleware) return a Promise.
+// `unknown`, not `void`: proxy handlers (http-proxy-middleware) return a Promise,
+// and a void-typed slot makes @typescript-eslint/no-misused-promises (rightly)
+// complain that the Promise would be dropped. Express ignores the return value.
 export type Handler = (
   req: Request,
   res: Response,
   next: NextFunction,
-) => void | Promise<void>;
+) => unknown;
 export type Color = 'blue' | 'green';
 
 const requests = counter(
