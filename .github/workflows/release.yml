@@ -7,7 +7,6 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  id-token: write # OIDC token for AWS (no stored keys)
   contents: read
 
 concurrency:
@@ -26,10 +25,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: AWS credentials via OIDC
+      # OIDC is blocked by our account's SCP (see docs/adr/0005). The shopflow-ci user can
+      # ONLY push to our ECR repos. Secrets are never exposed to fork PRs, and this
+      # workflow runs only on main.
+      - name: AWS credentials (least-privilege CI user)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION }}
 
       # Tags are IMMUTABLE: a re-run must skip instead of failing on push.
