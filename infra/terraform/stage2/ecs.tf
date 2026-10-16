@@ -19,7 +19,7 @@ resource "aws_service_discovery_private_dns_namespace" "main" {
 }
 
 resource "aws_service_discovery_service" "svc" {
-  for_each = toset(concat(keys(local.services), ["data"]))
+  for_each = toset(keys(local.services))
   name     = each.key
   dns_config {
     namespace_id   = aws_service_discovery_private_dns_namespace.main.id
@@ -33,10 +33,24 @@ resource "aws_service_discovery_service" "svc" {
   force_destroy = true
 }
 
-# The data box is not an ECS task: register its private IP by hand.
+# The data box is not an ECS task: register its private IP by hand. No custom
+# health check here (nobody would report it healthy), so the record is always served.
+resource "aws_service_discovery_service" "data" {
+  name = "data"
+  dns_config {
+    namespace_id   = aws_service_discovery_private_dns_namespace.main.id
+    routing_policy = "MULTIVALUE"
+    dns_records {
+      type = "A"
+      ttl  = 10
+    }
+  }
+  force_destroy = true
+}
+
 resource "aws_service_discovery_instance" "data" {
   instance_id = "data-box"
-  service_id  = aws_service_discovery_service.svc["data"].id
+  service_id  = aws_service_discovery_service.data.id
   attributes  = { AWS_INSTANCE_IPV4 = aws_instance.data.private_ip }
 }
 
@@ -239,6 +253,8 @@ locals {
     startPeriod = 90
   }
 
+  kafka_services = ["order", "inventory", "payment", "notification"]
+
   # Per service: [db-init] -> [kafka-topics] -> app. Init containers are not
   # essential; the app starts only after they exit 0 (dependsOn SUCCESS).
   containers = {
@@ -258,9 +274,9 @@ locals {
         secrets          = [{ name = "PGPASSWORD", valueFrom = "${local.db_secret}:password::" }]
         logConfiguration = { logDriver = "awslogs", options = merge(local.log_options, { "awslogs-stream-prefix" = "${name}-init" }) }
       }],
-      name != "order" ? [] : [{
+      !contains(local.kafka_services, name) ? [] : [{
         name             = "kafka-topics"
-        image            = "${local.registry}/shopflow/order:${var.image_tag}"
+        image            = "${local.registry}/shopflow/${name}:${var.image_tag}"
         essential        = false
         command          = ["node", "scripts/kafka-topics.js"]
         environment      = [{ name = "KAFKA_BROKERS", value = "${local.data_host}:9092" }]
@@ -288,7 +304,7 @@ locals {
         )
         dependsOn = concat(
           s.db == null ? [] : [{ containerName = "db-init", condition = "SUCCESS" }],
-          name == "order" ? [{ containerName = "kafka-topics", condition = "SUCCESS" }] : []
+          contains(local.kafka_services, name) ? [{ containerName = "kafka-topics", condition = "SUCCESS" }] : []
         )
         healthCheck      = local.health_check
         logConfiguration = { logDriver = "awslogs", options = merge(local.log_options, { "awslogs-stream-prefix" = name }) }
