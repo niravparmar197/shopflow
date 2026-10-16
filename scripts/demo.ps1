@@ -55,8 +55,19 @@ function SsmValue($name) {
 }
 
 # ---------------- Stage 1 ----------------
-function Stage1($action) {
+# Instance id from Terraform; if that read fails (lock, network, no init), ask EC2 by tag.
+function Stage1Id {
   $id = TfOut $tf1 "instance_id"
+  if ($id) { return $id }
+  $id = aws ec2 describe-instances @aws --filters "Name=tag:Name,Values=shopflow-stage1" `
+    "Name=instance-state-name,Values=pending,running,stopping,stopped" `
+    --query "Reservations[0].Instances[0].InstanceId" --output text
+  if ($id -and $id -ne "None") { return $id }
+  return $null
+}
+
+function Stage1($action) {
+  $id = Stage1Id
   if (-not $id) { throw "Stage 1 is not created (infra/terraform/stage1)" }
   $domain = "https://$(SsmValue DUCKDNS_SUBDOMAIN).duckdns.org"
   switch ($action) {
@@ -119,7 +130,7 @@ function Stage2($action) {
 }
 
 function Status {
-  $id = TfOut $tf1 "instance_id"
+  $id = Stage1Id
   if ($id) {
     $st = aws ec2 describe-instances --instance-ids $id @aws --query "Reservations[0].Instances[0].State.Name" --output text
     Say "Stage 1: $st  https://$(SsmValue DUCKDNS_SUBDOMAIN).duckdns.org"
