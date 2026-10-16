@@ -1,0 +1,48 @@
+# Caddy: HTTPS with automatic Let's Encrypt certificates (and renewals) for the
+# DuckDNS name, then reverse proxy to the gateway. The ONLY public entry point.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	# `route` keeps the rules in EXACTLY this order (Caddy re-sorts them otherwise).
+	route {
+		# Never public: Prometheus scrapes /metrics on the private network, and
+		# /internal/* is service-to-service only.
+		@private path_regexp private ^/(metrics|internal)(/|$)|/internal/
+		respond @private 404
+
+		# Swagger UI + admin UIs: username "admin", password = SSM ADMIN_PASSWORD.
+		@admin path /docs /docs/* /jaeger /jaeger/* /mail /mail/*
+		basic_auth @admin {
+			admin {$ADMIN_PASSWORD_HASH}
+		}
+
+		handle /jaeger* {
+			reverse_proxy jaeger:16686
+		}
+		handle /mail* {
+			reverse_proxy mailpit:8025
+		}
+		# Grafana has its own login (admin / SSM GRAFANA_ADMIN_PASSWORD).
+		handle /grafana* {
+			reverse_proxy grafana:3000
+		}
+		# Product images: /assets/products/<key> -> MinIO (only products/ is public-read).
+		handle_path /assets/* {
+			rewrite * /shopflow-products{uri}
+			reverse_proxy minio:9000
+		}
+		# Everything else is the API. Caddy sets X-Forwarded-For; the gateway trusts 1 hop.
+		handle {
+			reverse_proxy gateway:3000
+		}
+	}
+}

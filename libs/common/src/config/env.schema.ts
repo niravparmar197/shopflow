@@ -21,6 +21,13 @@ export const envSchema = z.object({
 
   DATABASE_URL: z.url().optional(),
   MONGO_URL: z.url().optional(),
+  // Build Mongo indexes on startup. Default: on outside production, off in
+  // production (a big collection can lock while building). Stage 1 turns it on
+  // on purpose: tiny collections, and the unique indexes ARE the dedupe.
+  MONGO_AUTO_INDEX: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
   REDIS_URL: z.url().optional(),
   KAFKA_BROKERS: z.string().min(1).optional(), // comma-separated host:port
   // Outbox relay (libs/kafka). Off in tests, which run without Kafka.
@@ -112,6 +119,12 @@ export const envSchema = z.object({
   // load test (k6 sends 1,000 users from one IP); never trust a client's
   // X-Forwarded-For to get around it.
   RATE_LIMIT_GLOBAL_PER_MIN: z.coerce.number().int().positive().default(100),
+  // Gateway behind a reverse proxy (Caddy on Stage 1, ALB on Stage 2): how many
+  // proxy hops to trust for X-Forwarded-For, so req.ip is the real client and
+  // not the proxy (otherwise every user shares ONE rate-limit bucket).
+  // 0 = no proxy (local). Never set it higher than the real number of hops,
+  // or a client can spoof its IP with its own X-Forwarded-For header.
+  TRUST_PROXY_HOPS: z.coerce.number().int().nonnegative().default(0),
 
   // OpenAPI: each service serves /docs/openapi.json, the gateway the UI at /docs.
   SWAGGER_ENABLED: z

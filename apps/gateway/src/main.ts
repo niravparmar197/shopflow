@@ -9,6 +9,14 @@ void bootstrapService(GatewayModule, {
   bodyParser: false,
   configure: (app) => {
     const config = app.get<ConfigService<Env, true>>(ConfigService);
+    // Behind Caddy/ALB: take the client IP from X-Forwarded-For (N hops only).
+    const hops = config.get('TRUST_PROXY_HOPS', { infer: true });
+    if (hops > 0) {
+      const express = app.getHttpAdapter().getInstance() as {
+        set(key: string, value: number): void;
+      };
+      express.set('trust proxy', hops);
+    }
     const origins = (config.get('CORS_ORIGINS', { infer: true }) ?? '')
       .split(',')
       .map((o) => o.trim())

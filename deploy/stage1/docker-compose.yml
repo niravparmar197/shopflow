@@ -1,0 +1,268 @@
+# ShopFlow Stage 1: everything on one EC2 box. Started by deploy.sh, never by hand:
+#   docker compose -p shopflow --env-file /opt/shopflow/shared/.env up -d
+# Secrets come from /opt/shopflow/shared/.env (written by deploy.sh from SSM, chmod 600).
+# Only Caddy publishes ports (80/443). Everything else talks on the private network.
+name: shopflow
+
+x-app: &app
+  restart: unless-stopped
+  stop_grace_period: 30s
+  volumes: ["/opt/shopflow/keys:/run/keys:ro"] # JWT keys from SSM, never in the image
+  logging: { driver: json-file, options: { max-size: 20m, max-file: "3" } }
+
+x-migrate: &migrate
+  restart: "no"
+  command: ["node", "dist/main.js", "migrate"]
+  depends_on: { postgres: { condition: service_healthy } }
+
+services:
+  # ================= edge =================
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep them, Let's Encrypt has rate limits
+      - caddy_config:/config
+    depends_on: [gateway]
+
+  # ================= data =================
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # only used on the FIRST start (empty volume)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop"]
+      interval: 5s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--wiredTigerCacheSizeGB", "0.5"] # default would take half the box's RAM
+    volumes: [mongodata:/data/db]
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+
+  kafka:
+    image: apache/kafka:3.8.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+    volumes: [kafkadata:/var/lib/kafka/data]
+
+  minio:
+    image: bitnamilegacy/minio:2024.9.22
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: shopflow
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes: [miniodata:/bitnami/minio/data]
+
+  minio-setup:
+    image: bitnamilegacy/minio:2024.9.22
+    restart: "no"
+    depends_on: [minio]
+    environment:
+      MC_CONFIG_DIR: /tmp/.mc
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 shopflow \"$$MINIO_ROOT_PASSWORD\"; do sleep 1; done;
+      mc mb -p local/shopflow-products;
+      mc anonymous set download local/shopflow-products/products;
+      mc ilm rule add --prefix 'tmp/' --expire-days 1 local/shopflow-products || true;
+      exit 0;
+      "
+
+  mailpit: # demo inbox: order emails land here (no real email is sent)
+    image: axllent/mailpit:v1.20
+    restart: unless-stopped
+    environment:
+      MP_WEBROOT: mail
+      MP_MAX_MESSAGES: 500
+
+  # ================= observability =================
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    restart: unless-stopped
+    environment:
+      QUERY_BASE_PATH: /jaeger
+    command: ["--memory.max-traces=20000"]
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - promdata:/prometheus
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    volumes: ["./alertmanager:/etc/alertmanager:ro"]
+    depends_on: [mailpit]
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    restart: unless-stopped
+    command: ["--kafka.server=kafka:29092"]
+    depends_on: [kafka]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://${DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+
+  # ================= one-off jobs =================
+  user-migrate:
+    <<: *migrate
+    image: ${REGISTRY}/shopflow/user:${IMAGE_TAG}
+    env_file: env/user.env
+    environment: { DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/users_db" }
+  order-migrate:
+    <<: *migrate
+    image: ${REGISTRY}/shopflow/order:${IMAGE_TAG}
+    env_file: env/order.env
+    environment: { DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/orders_db" }
+  inventory-migrate:
+    <<: *migrate
+    image: ${REGISTRY}/shopflow/inventory:${IMAGE_TAG}
+    env_file: env/inventory.env
+    environment: { DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/inventory_db" }
+  payment-migrate:
+    <<: *migrate
+    image: ${REGISTRY}/shopflow/payment:${IMAGE_TAG}
+    env_file: env/payment.env
+    environment: { DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/payments_db" }
+
+  kafka-topics:
+    image: ${REGISTRY}/shopflow/order:${IMAGE_TAG}
+    restart: "no"
+    command: ["node", "/scripts/kafka-topics.js"]
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      NODE_PATH: /app/node_modules
+    volumes: ["./scripts:/scripts:ro"]
+    depends_on: [kafka]
+
+  # ================= the 7 services =================
+  user:
+    <<: *app
+    image: ${REGISTRY}/shopflow/user:${IMAGE_TAG}
+    env_file: env/user.env
+    environment: { DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/users_db" }
+    depends_on:
+      redis: { condition: service_started }
+      user-migrate: { condition: service_completed_successfully }
+
+  product:
+    <<: *app
+    image: ${REGISTRY}/shopflow/product:${IMAGE_TAG}
+    env_file: env/product.env
+    environment:
+      AWS_ACCESS_KEY_ID: shopflow # MinIO root user (Stage 1 keeps images on the box)
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      ASSET_BASE_URL: https://${DOMAIN}/assets
+    depends_on: [mongo, redis, minio]
+
+  order:
+    <<: *app
+    image: ${REGISTRY}/shopflow/order:${IMAGE_TAG}
+    env_file: env/order.env
+    environment:
+      DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/orders_db"
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+    depends_on:
+      redis: { condition: service_started }
+      order-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully }
+
+  inventory:
+    <<: *app
+    image: ${REGISTRY}/shopflow/inventory:${IMAGE_TAG}
+    env_file: env/inventory.env
+    environment:
+      DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/inventory_db"
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN}
+    depends_on:
+      redis: { condition: service_started }
+      inventory-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully }
+
+  payment:
+    <<: *app
+    image: ${REGISTRY}/shopflow/payment:${IMAGE_TAG}
+    env_file: env/payment.env
+    environment:
+      DATABASE_URL: "postgresql://shop:${POSTGRES_PASSWORD}@postgres:5432/payments_db"
+      FAKE_WEBHOOK_SECRET: ${FAKE_WEBHOOK_SECRET}
+    depends_on:
+      payment-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully }
+
+  notification:
+    <<: *app
+    image: ${REGISTRY}/shopflow/notification:${IMAGE_TAG}
+    env_file: env/notification.env
+    depends_on:
+      mongo: { condition: service_started }
+      redis: { condition: service_started }
+      mailpit: { condition: service_started }
+      kafka-topics: { condition: service_completed_successfully }
+
+  gateway:
+    <<: *app
+    image: ${REGISTRY}/shopflow/gateway:${IMAGE_TAG}
+    env_file: env/gateway.env
+    environment:
+      CORS_ORIGINS: https://${DOMAIN}
+      RATE_LIMIT_GLOBAL_PER_MIN: ${RATE_LIMIT_GLOBAL_PER_MIN:-100}
+    depends_on: [redis, user, product, order, inventory, payment, notification]
+
+volumes:
+  pgdata:
+  mongodata:
+  kafkadata:
+  miniodata:
+  promdata:
+  grafanadata:
+  caddy_data:
+  caddy_config:

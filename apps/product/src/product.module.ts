@@ -22,7 +22,9 @@ import { ProductsService } from './products/products.service';
         maxPoolSize: 10,
         // Build indexes on startup outside production; there they should be
         // created deliberately, since building them can lock a big collection.
-        autoIndex: config.get('NODE_ENV', { infer: true }) !== 'production',
+        autoIndex:
+          config.get('MONGO_AUTO_INDEX', { infer: true }) ??
+          config.get('NODE_ENV', { infer: true }) !== 'production',
       }),
     }),
     MongooseModule.forFeature([{ name: Product.name, schema: ProductSchema }]),

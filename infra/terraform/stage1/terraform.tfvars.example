@@ -1,0 +1,3 @@
+# Optional. Defaults are fine for the free tier.
+# instance_type  = "m7i-flex.large"   # or "c7i-flex.large" (4 GiB: too small for the full stack)
+# root_volume_gb = 30
