@@ -13,6 +13,7 @@ export * from './redis/redis.module';
 export * from './cache/cache.module';
 export * from './cache/cache.service';
 export * from './database/migrate';
+export * from './database/postgres-ssl';
 export * from './swagger/error-response.dto';
 export * from './swagger/setup-service-swagger';
 export * from './swagger/api-error.decorator';

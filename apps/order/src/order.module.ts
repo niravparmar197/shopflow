@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, Env, RedisModule } from '@app/common';
+import { CommonModule, Env, RedisModule, postgresSsl } from '@app/common';
 import { KafkaModule } from '@app/kafka';
 import { ProductClientModule } from '@app/proto';
 import { CartController } from './cart/cart.controller';
@@ -34,6 +34,7 @@ import { OrderSagaService } from './saga/order-saga.service';
       useFactory: (config: ConfigService<Env, true>) => ({
         type: 'postgres',
         url: config.getOrThrow('DATABASE_URL', { infer: true }),
+        ssl: postgresSsl(), // TLS to RDS on Stage 2 (off locally)
         entities: ORDER_ENTITIES,
         // Schema changes go through migrations only.
         synchronize: false,

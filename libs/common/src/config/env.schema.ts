@@ -20,6 +20,8 @@ export const envSchema = z.object({
     .default('info'),
 
   DATABASE_URL: z.url().optional(),
+  // Path to a CA bundle: turns on verified TLS to Postgres (Stage 2 RDS).
+  DATABASE_SSL_CA: z.string().min(1).optional(),
   MONGO_URL: z.url().optional(),
   // Build Mongo indexes on startup. Default: on outside production, off in
   // production (a big collection can lock while building). Stage 1 turns it on
