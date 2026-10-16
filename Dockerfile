@@ -34,9 +34,15 @@ ENV NODE_ENV=production \
     PROTO_DIR=/app/proto \
     PORT=3000
 # tini as PID 1: forwards SIGTERM to Node (graceful shutdown) and reaps zombies.
+# apt-get upgrade: pull Debian security fixes newer than the base image (Trivy gate).
+# Remove npm/npx/corepack: the runtime never installs packages, and npm's bundled
+# deps (tar, glob, minimatch, sigstore...) were most of our HIGH/CRITICAL findings.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends tini \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build     --chown=node:node /app/dist/apps/${APP} ./dist
