@@ -1,4 +1,5 @@
 import { DataSource, MixedList } from 'typeorm';
+import { postgresSsl } from './postgres-ssl';
 
 /**
  * `node dist/apps/<svc>/main.js migrate`: apply pending migrations and exit.
@@ -25,6 +26,7 @@ export async function runMigrations(
   const ds = new DataSource({
     type: 'postgres',
     url: process.env.DATABASE_URL,
+    ssl: postgresSsl(),
     entities,
     migrations,
     migrationsTableName: 'migrations',

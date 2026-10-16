@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, Env } from '@app/common';
+import { CommonModule, Env, postgresSsl } from '@app/common';
 import { KafkaModule } from '@app/kafka';
 import { ResilienceModule } from '@app/resilience';
 import { PAYMENT_ENTITIES } from './database/entities';
@@ -17,6 +17,7 @@ import { PaymentsModule } from './payments/payments.module';
       useFactory: (config: ConfigService<Env, true>) => ({
         type: 'postgres',
         url: config.getOrThrow('DATABASE_URL', { infer: true }),
+        ssl: postgresSsl(), // TLS to RDS on Stage 2 (off locally)
         entities: PAYMENT_ENTITIES,
         // Schema changes go through migrations only.
         synchronize: false,

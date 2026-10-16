@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CommonModule, Env, RedisModule } from '@app/common';
+import { CommonModule, Env, RedisModule, postgresSsl } from '@app/common';
 import { KafkaModule } from '@app/kafka';
 import { INVENTORY_ENTITIES } from './database/entities';
 import {
@@ -26,6 +26,7 @@ import { StockController } from './stock/stock.controller';
       useFactory: (config: ConfigService<Env, true>) => ({
         type: 'postgres',
         url: config.getOrThrow('DATABASE_URL', { infer: true }),
+        ssl: postgresSsl(), // TLS to RDS on Stage 2 (off locally)
         entities: INVENTORY_ENTITIES,
         // Schema changes go through migrations only.
         synchronize: false,

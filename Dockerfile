@@ -44,6 +44,13 @@ RUN apt-get update \
  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
+# AWS's CA bundle for RDS: verified TLS to Postgres on Stage 2 (DATABASE_SSL_CA).
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+# Preload: secrets injected by ECS -> key files + DATABASE_URL (no-op elsewhere).
+COPY --chown=node:node scripts/container-env.js ./container-env.js
+# Topic creation script, runnable from any ShopFlow image (ECS init container).
+COPY --chown=node:node scripts/kafka-topics.js ./scripts/kafka-topics.js
+ENV NODE_OPTIONS="--require /app/container-env.js"
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build     --chown=node:node /app/dist/apps/${APP} ./dist
 COPY --from=build     --chown=node:node /app/libs/proto/src/*.proto ./proto/
