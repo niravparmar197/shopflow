@@ -138,9 +138,30 @@ resource "aws_cloudfront_origin_access_control" "products" {
 
 # AWS-managed policies (fixed IDs).
 locals {
-  cache_disabled        = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
-  cache_optimized       = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
+  cache_optimized        = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized
   all_viewer_except_host = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # AllViewerExceptHostHeader
+}
+
+# API "no cache" policy. NOT the managed CachingDisabled: CloudFront forwards the
+# Authorization header on GET/HEAD only if it is part of the cache key, so with
+# CachingDisabled every authenticated GET (GET /v1/orders) would arrive WITHOUT its
+# Bearer token -> 401. Default TTL 0 = nothing is cached unless the API says so,
+# and then the key includes the token, cookies and query string (no cross-user leak).
+resource "aws_cloudfront_cache_policy" "api" {
+  name        = "${local.name}-api"
+  min_ttl     = 0
+  default_ttl = 0
+  max_ttl     = 1
+  parameters_in_cache_key_and_forwarded_to_origin {
+    enable_accept_encoding_gzip   = true
+    enable_accept_encoding_brotli = true
+    headers_config {
+      header_behavior = "whitelist"
+      headers { items = ["Authorization"] }
+    }
+    cookies_config { cookie_behavior = "all" }
+    query_strings_config { query_string_behavior = "all" }
+  }
 }
 
 # Accepted: default *.cloudfront.net certificate (no custom domain) => AWS sets the
@@ -181,7 +202,7 @@ resource "aws_cloudfront_distribution" "main" {
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = local.cache_disabled
+    cache_policy_id          = aws_cloudfront_cache_policy.api.id
     origin_request_policy_id = local.all_viewer_except_host
     compress                 = true
   }

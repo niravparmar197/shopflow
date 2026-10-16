@@ -45,6 +45,17 @@ resource "aws_elasticache_subnet_group" "main" {
 #trivy:ignore:AWS-0045
 #trivy:ignore:AWS-0050
 #trivy:ignore:AWS-0051
+# BullMQ (notification jobs) requires maxmemory-policy=noeviction: the default
+# (volatile-lru) may silently drop queued jobs when memory is full.
+resource "aws_elasticache_parameter_group" "main" {
+  name   = "${local.name}-redis7"
+  family = "redis7"
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+}
+
 resource "aws_elasticache_cluster" "main" {
   cluster_id           = local.name
   engine               = "redis"
@@ -52,7 +63,7 @@ resource "aws_elasticache_cluster" "main" {
   node_type            = "cache.t4g.micro"
   num_cache_nodes      = 1
   port                 = 6379
-  parameter_group_name = "default.redis7"
+  parameter_group_name = aws_elasticache_parameter_group.main.name
   subnet_group_name    = aws_elasticache_subnet_group.main.name
   security_group_ids   = [aws_security_group.db.id]
 }

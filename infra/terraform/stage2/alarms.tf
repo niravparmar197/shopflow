@@ -1,6 +1,7 @@
 # CloudWatch alarms -> SNS -> email. Confirm the subscription email once.
 resource "aws_sns_topic" "alerts" {
-  name = "${local.name}-alerts"
+  name              = "${local.name}-alerts"
+  kms_master_key_id = "alias/aws/sns"
 }
 
 resource "aws_sns_topic_subscription" "email" {
