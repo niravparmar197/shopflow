@@ -1,12 +1,37 @@
 # ShopFlow
 
-An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservices in a single monorepo.
+An e-commerce backend built as **7 NestJS microservices** in one monorepo: REST at the edge, **gRPC** between services, **Kafka** events with a transactional outbox, a **choreography saga** for checkout, and **Terraform + GitHub Actions** deploys to **AWS**.
 
-> **Status:** F1 (auth) is done: signup, login, JWT access tokens and refresh token rotation in the `user` service, behind the `gateway`. The other services are still scaffolds.
+> **Status:** F0–F11 done. Live on AWS (Stage 1, on demand) with CI/CD, Trivy-gated images, health-checked deploys and automatic rollback.
+
+```mermaid
+flowchart LR
+  C[Client] -->|HTTPS| E[Edge: Caddy on Stage 1 / CloudFront + ALB on Stage 2]
+  E --> G[gateway<br/>JWT, rate limits, blue-green switch]
+  G --> U[user] & P[product] & O[order] & I[inventory] & PAY[payment] & N[notification]
+  O -- gRPC prices --> P
+  O -- HTTP flash gate --> I
+  U & O & I & PAY --> PG[(PostgreSQL<br/>one DB per service)]
+  P & N --> M[(MongoDB)]
+  G & O & U & P --> R[(Redis)]
+  O & I & PAY -- outbox --> K{{Kafka}}
+  K --> O & I & PAY & N
+  N --> MAIL[SMTP]
+```
+
+**Highlights** (each one has a section below):
+
+| Area | What is in it |
+|---|---|
+| Correctness | Idempotency keys, transactional outbox, idempotent consumers (`processed_events`), retry topics + DLQ, saga compensation, advisory/row locks, Redis Lua flash-sale gate |
+| Resilience | Circuit breaker + retry + timeout per provider, bulkhead with load shedding, sliding-window rate limits, graceful shutdown |
+| Observability | OpenTelemetry traces across HTTP, gRPC, Kafka and BullMQ; Prometheus RED + business metrics; Grafana as code; alerts → email; CQRS read model |
+| Delivery | One multi-stage non-root image for all services; CI with integration tests; Trivy gate on images and IaC; deploy with health check + rollback; blue-green for payment |
+| AWS | Stage 1: one EC2 + Compose + auto-HTTPS. Stage 2: CloudFront → ALB → ECS Fargate, RDS, ElastiCache, S3, CloudWatch alarms (81 Terraform resources) |
 
 ## Services
 
-| Service        | Path                | Default port | Responsibility (planned)                          |
+| Service        | Path                | Default port | Responsibility                                    |
 | -------------- | ------------------- | ------------ | ------------------------------------------------- |
 | `gateway`      | `apps/gateway`      | 3000         | Public HTTP entry point; routes to other services |
 | `user`         | `apps/user`         | 3001         | Accounts, authentication, profiles                |
@@ -22,7 +47,7 @@ An e-commerce backend built as a set of [NestJS](https://nestjs.com/) microservi
 
 Imported via TypeScript path aliases (see `tsconfig.json`).
 
-| Library      | Alias             | Purpose (planned)                                            |
+| Library      | Alias             | Purpose                                                      |
 | ------------ | ----------------- | ------------------------------------------------------------ |
 | `common`     | `@app/common`     | Shared utilities, DTOs, guards, filters                      |
 | `events`     | `@app/events`     | Event names and payload contracts                            |
@@ -422,6 +447,68 @@ docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -
 - Local compose runs payment with `NODE_ENV=development` and the fake provider; production refuses the fake provider.
 - Known trade-off: every image carries the whole monorepo's production `node_modules`. Per-app pruning (e.g. `turbo prune`) is the next step.
 
+## Deploy on AWS (F11)
+
+Account notes that shaped the design (ADR 0005): the AWS "projects" Free plan allows only the
+project Region (**`ap-southeast-2`**) and blocks IAM OIDC providers, so CI uses a
+least-privilege IAM user that can only push to ECR and run the Stage 1 deploy.
+
+### Pipeline
+
+1. **CI** (every PR): lint, type check, unit + integration tests for all services, build.
+2. **release-images** (merge to `main`): build 7 images → **Trivy** (fail on fixable HIGH/CRITICAL) → push to ECR as `<service>:<git-sha>`; Trivy also scans Terraform + Dockerfile.
+3. **deploy-stage1**: bundle → S3 → **SSM Run Command** (no SSH) → `deploy.sh` on the box: secrets from SSM, `compose pull/up`, migrations as one-off jobs, health check through HTTPS, **automatic rollback** to the last good tag.
+
+### Stage 1: one box ([docs/deploy-stage1.md](docs/deploy-stage1.md))
+
+One free-tier EC2 (`m7i-flex.large`), Docker Compose with the whole stack, **Caddy** for automatic Let's Encrypt HTTPS on a DuckDNS name. Only 80/443 open. Admin UIs (`/docs`, `/grafana`, `/jaeger`, `/mail`) behind auth; `/metrics` and `/internal` blocked at the edge.
+
+### Stage 2: managed AWS (`infra/terraform/stage2`)
+
+```
+CloudFront (HTTPS) ─┬─ /products/* ─▶ S3 (private, OAC)
+                    └─ /*          ─▶ ALB (CloudFront prefix list + secret header only)
+                                        └─▶ ECS Fargate x7 (Cloud Map: <svc>.shopflow.local)
+                                              ├─▶ RDS PostgreSQL (private, verified TLS, RDS-managed password)
+                                              ├─▶ ElastiCache Redis (private, noeviction for BullMQ)
+                                              └─▶ data box EC2: Kafka + Mongo + Jaeger + Mailpit
+CloudWatch Logs + alarms (5xx, p95, unhealthy targets, CPU) ─▶ SNS email
+```
+
+| Decision | Why |
+|---|---|
+| ECS Fargate, not EKS | No $73/month control plane; enough for 7 services |
+| No NAT gateway | ~$35/month saved: tasks get a public IP but their SG only admits the ALB and each other; RDS/Redis stay private |
+| CloudFront in front of the ALB | Free HTTPS without owning a domain; ALB reachable only from CloudFront |
+| Kafka + Mongo on one EC2 | MSK and DocumentDB need a paid plan |
+| Secrets never in Terraform state | RDS manages its password in Secrets Manager; ECS injects it; `scripts/container-env.js` builds `DATABASE_URL` in the container |
+| Init containers | `db-init` creates the service DB, `kafka-topics` creates topics with the right partitions/retention before consumers start; migrations run before the app (advisory lock) |
+| Circuit breaker | A deployment whose tasks keep failing rolls back by itself |
+
+### On-demand demo (cost control)
+
+| Command | Time | What |
+|---|---|---|
+| `.\scripts\demo.ps1 status` | 5 s | What is running, with URLs |
+| `.\scripts\demo.ps1 stage1 start` / `stop` | 2 min | The demo box (data, certificate and DNS name are kept) |
+| `.\scripts\demo.ps1 stage2 up` / `down` | 20 / 10 min | Create / delete all of Stage 2 (newest images) |
+| `.\scripts\demo.ps1 stage2 pause` / `resume` | 2 / 8 min | Tasks to 0, RDS + data box stopped |
+
+### Blue-green release (payment)
+
+```powershell
+.\scripts\blue-green.ps1 deploy     # new image on GREEN; blue still serves everyone
+.\scripts\blue-green.ps1 preview    # test green in production with a secret header
+.\scripts\blue-green.ps1 switch     # all users -> green; blue kept warm
+.\scripts\blue-green.ps1 rollback   # all users -> blue again (instant: it never stopped)
+.\scripts\blue-green.ps1 finish     # blue gets the new image, green removed
+.\scripts\blue-green.ps1 status     # live colour + requests/5xx per colour
+```
+
+- Blue = the `payment` ECS service, green = `payment-green` (only during a release). The **gateway** sends all users to the live colour and tags each response `x-served-by: blue|green` (metric `gateway_deploy_requests_total`).
+- **Preview before switch**: `x-deploy-color: green` + `x-preview-token` reaches the idle colour, so the new version is tested in production while users stay on blue.
+- **Only the live colour runs background work** (Kafka consumers, payment sweeper): the idle colour must not process events. Both share one database, so migrations are expand/contract. Details: [ADR 0006](docs/adr/0006-blue-green-payment.md).
+
 ## Scripts
 
 | Command                                                                       | Description                                                        |
@@ -443,6 +530,11 @@ docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml up -
 | `npm run dlq:replay -- <group>`                                               | Send a consumer group's dead letters back to their topic           |
 | `npm run openapi:export`                                                      | Save every API spec to `docs/openapi/` (stack running)             |
 | `node scripts/upload-image.js <productId> <file> <adminToken>`                | Upload a product image via presigned POST                          |
+| `.\scripts\demo.ps1 <status \| stage1 start\|stop \| stage2 up\|pause\|resume\|down>` | Start / stop the AWS demo environments                            |
+| `.\scripts\blue-green.ps1 <deploy\|preview\|switch\|rollback\|finish\|status>` | Blue-green release of the payment service on Stage 2              |
+| `.\scripts\put-stage1-secrets.ps1 -DuckDnsSubdomain <x> -AcmeEmail <y>`       | Upload production secrets + JWT keys to SSM (once)                 |
+| `.\scripts\rotate-ci-key.ps1`                                                | Rotate the CI user's AWS key and update GitHub secrets             |
+| `.\scripts\smoke.ps1 -Base <url>`                                            | Post-deploy smoke test (signup, login, products, orders)           |
 
 Append a project name to the build/start scripts to target one service, e.g. `npm run start:dev -- order`.
 
