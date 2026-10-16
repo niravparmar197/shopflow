@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   image:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to Ubuntu 26 on 19 Oct 2026
     strategy:
       fail-fast: false
       matrix:
@@ -64,7 +64,7 @@ jobs:
 
       - name: Trivy image scan (fail on fixable CRITICAL/HIGH)
         if: steps.exists.outputs.skip != 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0 # old bare tags were hijacked and deleted (GHSA-69fq-xp46-6x23)
         with:
           image-ref: ${{ env.IMAGE }}
           severity: CRITICAL,HIGH
@@ -77,11 +77,11 @@ jobs:
         run: docker push "$IMAGE"
 
   iac-scan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to Ubuntu 26 on 19 Oct 2026
     steps:
       - uses: actions/checkout@v4
       - name: Trivy config scan (Terraform + Dockerfile)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0 # old bare tags were hijacked and deleted (GHSA-69fq-xp46-6x23)
         with:
           scan-type: config
           scan-ref: .
