@@ -1,0 +1,3 @@
+# Accepted findings. Every line needs: who accepted it, why, and when to re-check.
+# Format:
+# CVE-2099-0000  # nirav, 2026-10-16: no fix upstream yet; re-check 2026-11-16

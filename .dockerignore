@@ -12,3 +12,6 @@ load-tests/reports
 docs/img
 *.log
 infra/env
+infra/terraform
+keys-prod
+deploy

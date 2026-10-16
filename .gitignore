@@ -64,3 +64,16 @@ load-tests/.data/
 
 # Compose env files with real secrets (commit only the .env.example copies)
 infra/env/*.env
+
+# Terraform: local state, plans, provider cache, real variable files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl.bak
+
+# Production JWT keys (live in SSM Parameter Store)
+keys-prod/
