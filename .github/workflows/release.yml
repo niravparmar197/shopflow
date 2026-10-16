@@ -1,0 +1,87 @@
+name: release-images
+
+# After a merge to main: build 7 images → scan with Trivy → push to ECR as <app>:<git-sha>.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # OIDC token for AWS (no stored keys)
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never cancel a half-pushed release
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [gateway, user, product, order, inventory, payment, notification]
+    env:
+      IMAGE: ${{ vars.ECR_REGISTRY }}/shopflow/${{ matrix.app }}:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Tags are IMMUTABLE: a re-run must skip instead of failing on push.
+      - name: Skip if this SHA is already in ECR
+        id: exists
+        run: |
+          if aws ecr describe-images --repository-name shopflow/${{ matrix.app }} \
+               --image-ids imageTag=${{ github.sha }} >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Already in ECR, skipping."
+          fi
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        if: steps.exists.outputs.skip != 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.exists.outputs.skip != 'true'
+
+      - name: Build (load locally so we can scan before pushing)
+        if: steps.exists.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: APP=${{ matrix.app }}
+          tags: ${{ env.IMAGE }}
+          load: true
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+
+      - name: Trivy image scan (fail on fixable CRITICAL/HIGH)
+        if: steps.exists.outputs.skip != 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+          trivyignores: .trivyignore
+
+      - name: Push
+        if: steps.exists.outputs.skip != 'true'
+        run: docker push "$IMAGE"
+
+  iac-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy config scan (Terraform + Dockerfile)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          trivyignores: .trivyignore
