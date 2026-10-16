@@ -111,7 +111,8 @@ fields @message
     Say "normal user requests  -> $($normal -join ', ')   (expected: $live)"
     Say "preview requests      -> $($preview -join ', ')   (expected: $idle)"
     if (($preview | Select-Object -Unique) -eq $idle -and ($normal | Select-Object -Unique) -eq $live) {
-      Say "PREVIEW OK: $idle answers in production, users still on $live. Next: switch"
+      $next = if ($live -eq "blue") { "switch" } else { "finish (happy) or rollback" }
+      Say "PREVIEW OK: $idle answers in production, users still on $live. Next: $next"
     } else { Write-Host "Unexpected colours: check status / logs before switching." -ForegroundColor Yellow }
   }
 
