@@ -46,6 +46,9 @@ RUN apt-get update \
 WORKDIR /app
 # AWS's CA bundle for RDS: verified TLS to Postgres on Stage 2 (DATABASE_SSL_CA).
 ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+# ADD --chmod also applies to the folder it creates (644 = no "x", so nobody can
+# enter it): make the folder traversable again for the non-root node user.
+RUN chmod 755 /app/certs
 # Preload: secrets injected by ECS -> key files + DATABASE_URL (no-op elsewhere).
 COPY --chown=node:node scripts/container-env.js ./container-env.js
 # Topic creation script, runnable from any ShopFlow image (ECS init container).
