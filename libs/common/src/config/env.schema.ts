@@ -115,6 +115,13 @@ export const envSchema = z.object({
   ORDER_SERVICE_URL: z.url().optional(),
   INVENTORY_SERVICE_URL: z.url().optional(),
   PAYMENT_SERVICE_URL: z.url().optional(),
+  // Blue-green for payment: PAYMENT_SERVICE_URL is BLUE, this is GREEN.
+  // The gateway sends all users to PAYMENT_LIVE_COLOR. Empty = blue only.
+  PAYMENT_GREEN_URL: optionalSecret,
+  PAYMENT_LIVE_COLOR: z.enum(['blue', 'green']).default('blue'),
+  // Lets a tester reach the IDLE colour (x-deploy-color + x-preview-token).
+  // Unset = no preview possible.
+  PREVIEW_TOKEN: optionalSecret,
   NOTIFICATION_SERVICE_URL: z.url().optional(),
 
   // Gateway: requests per minute per client IP. Raise it ONLY for a local

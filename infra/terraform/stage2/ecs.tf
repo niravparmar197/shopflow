@@ -154,8 +154,14 @@ locals {
         CORS_ORIGINS             = local.public_url
         TRUST_PROXY_HOPS         = "2" # CloudFront + ALB
         RATE_LIMIT_GLOBAL_PER_MIN = "100"
+        # Blue-green (blue-green.tf): blue = PAYMENT_SERVICE_URL, green below.
+        PAYMENT_GREEN_URL  = local.green_on ? "http://payment-green.${local.ns}:3000" : ""
+        PAYMENT_LIVE_COLOR = local.live
       }
-      secrets = { JWT_PUBLIC_KEY = "${local.ssm}/JWT_PUBLIC_KEY" }
+      secrets = {
+        JWT_PUBLIC_KEY = "${local.ssm}/JWT_PUBLIC_KEY"
+        PREVIEW_TOKEN  = "${local.ssm}/ADMIN_PASSWORD" # lets a tester reach the idle colour
+      }
     }
     user = {
       db = "users_db"
@@ -215,9 +221,12 @@ locals {
         NODE_ENV                = "development"
         PAYMENT_PROVIDER        = "fake"
         KAFKA_BROKERS           = "${local.data_host}:9092"
-        PAYMENT_TTL_MINUTES     = "15"
-        PAYMENT_SWEEPER_ENABLED = "true"
-        PAYMENT_SWEEP_MS        = "30000"
+        PAYMENT_TTL_MINUTES = "15"
+        PAYMENT_SWEEP_MS    = "30000"
+        # Background work only on the LIVE colour (blue-green.tf).
+        KAFKA_CONSUMERS_ENABLED = local.live == "blue" ? "true" : "false"
+        PAYMENT_SWEEPER_ENABLED = local.live == "blue" ? "true" : "false"
+        JOBS_ENABLED            = local.live == "blue" ? "true" : "false"
       }
       secrets = {
         JWT_PUBLIC_KEY      = "${local.ssm}/JWT_PUBLIC_KEY"
@@ -276,7 +285,7 @@ locals {
       }],
       !contains(local.kafka_services, name) ? [] : [{
         name             = "kafka-topics"
-        image            = "${local.registry}/shopflow/${name}:${var.image_tag}"
+        image            = "${local.registry}/shopflow/${name}:${local.tag_for[name]}"
         essential        = false
         command          = ["node", "scripts/kafka-topics.js"]
         environment      = [{ name = "KAFKA_BROKERS", value = "${local.data_host}:9092" }]
@@ -284,7 +293,7 @@ locals {
       }],
       [merge({
         name      = name
-        image     = "${local.registry}/shopflow/${name}:${var.image_tag}"
+        image     = "${local.registry}/shopflow/${name}:${local.tag_for[name]}"
         essential = true
         portMappings = concat(
           [{ containerPort = 3000, protocol = "tcp" }],

@@ -18,6 +18,7 @@ import {
 } from '@app/common';
 import { ProductClientModule } from '@app/proto';
 import { jwtMiddleware } from './http/jwt.middleware';
+import { blueGreen } from './http/blue-green';
 import { proxyTo } from './http/proxy';
 import { createRateLimiter } from './http/rate-limit';
 import { userRateLimit } from './http/user-rate-limit';
@@ -70,6 +71,10 @@ export class GatewayModule implements NestModule {
       'NOTIFICATION_SERVICE_URL',
       { infer: true },
     );
+    // Blue-green: PAYMENT_SERVICE_URL = blue, PAYMENT_GREEN_URL = green.
+    const paymentGreen = this.config.get('PAYMENT_GREEN_URL', { infer: true });
+    const paymentLive = this.config.get('PAYMENT_LIVE_COLOR', { infer: true });
+    const previewToken = this.config.get('PREVIEW_TOKEN', { infer: true });
 
     // Exact per-user limits on expensive WRITES (sliding window, after the
     // JWT check). Invisible to a real user (idempotency absorbs double
@@ -187,7 +192,19 @@ export class GatewayModule implements NestModule {
     // 9) Payment webhooks: NO JWT (the provider has no user token); the
     //    HMAC signature is the auth. The gateway has no body parser, so the
     //    raw bytes reach the payment service unchanged.
-    consumer.apply(proxyTo(paymentService)).forRoutes(webhooks);
+    //    Webhooks follow the live colour too (no preview: providers can't set it).
+    consumer
+      .apply(
+        blueGreen(
+          'payment-webhooks',
+          {
+            blue: proxyTo(paymentService),
+            green: paymentGreen ? proxyTo(paymentGreen) : undefined,
+          },
+          paymentLive,
+        ),
+      )
+      .forRoutes(webhooks);
 
     // 10) Payments: JWT here; the payment service checks it again and only
     //     shows the caller's own payments. 10 s timeout: checkout retries
@@ -197,7 +214,16 @@ export class GatewayModule implements NestModule {
       .apply(
         jwtMiddleware(this.jwt),
         paymentsLimit,
-        proxyTo(paymentService, 10_000),
+        // All users -> the live colour; testers can preview the idle one.
+        blueGreen(
+          'payment',
+          {
+            blue: proxyTo(paymentService, 10_000),
+            green: paymentGreen ? proxyTo(paymentGreen, 10_000) : undefined,
+          },
+          paymentLive,
+          previewToken,
+        ),
       )
       .exclude(webhooks)
       .forRoutes('v1/payments{/*path}');
