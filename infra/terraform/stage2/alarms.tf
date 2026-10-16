@@ -1,4 +1,7 @@
 # CloudWatch alarms -> SNS -> email. Confirm the subscription email once.
+# Accepted: encrypted with the AWS-managed key (free); a customer-managed KMS key
+# costs ~$1/month and adds nothing for alarm emails.
+#trivy:ignore:AWS-0136
 resource "aws_sns_topic" "alerts" {
   name              = "${local.name}-alerts"
   kms_master_key_id = "alias/aws/sns"
