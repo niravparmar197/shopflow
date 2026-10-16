@@ -12,20 +12,17 @@ provider "aws" {
   default_tags { tags = { Project = "shopflow", ManagedBy = "terraform" } } # every resource tagged → easy cost view
 }
 
+# The new AWS "projects" experience has an AWS-managed SCP (RegionFloor):
+# only the project's own Region is allowed. Our project Region is Sydney (ap-southeast-2).
+# Mumbai and us-east-1 were both tested and denied.
 variable "region" {
   type    = string
-  default = "ap-south-1"
+  default = "ap-southeast-2"
 }
 
 variable "alert_email" {
   type        = string
   description = "Where budget alerts are sent"
-}
-
-variable "github_repo" {
-  type        = string
-  description = "owner/repo allowed to assume the CI role"
-  default     = "niravparmar197/shopflow"
 }
 
 variable "apps" {
