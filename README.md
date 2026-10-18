@@ -285,6 +285,8 @@ POST /v1/orders ─▶ Redis checkout lock (per user)
 | `POST /v1/orders`             | user | `Idempotency-Key` header (8–100 chars); body `{ expectedTotalPaise? }`; 10/min per user |
 | `GET /v1/orders?limit&cursor` | user | newest first, cursor pagination (max 50)                                                |
 | `GET /v1/orders/:id`          | user | only your own orders, otherwise 404                                                     |
+| `GET /v1/admin/orders?status&limit&cursor` | admin | every customer's orders, newest first; optional status; same cursor paging (Phase 2 P1, the web admin panel) |
+| `GET /v1/admin/orders/:id`    | admin | any order with items, `userId` and `customerEmail`                                      |
 
 | Error code                                             | HTTP | Meaning                                                                    |
 | ------------------------------------------------------ | ---- | -------------------------------------------------------------------------- |

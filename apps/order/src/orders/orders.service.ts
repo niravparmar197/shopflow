@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { OrderView } from '../read-model/order-view.entity';
 import { Order } from './order.entity';
+import { OrderStatus } from './order-status';
 
 const MAX_LIMIT = 50;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,6 +31,21 @@ interface ListRow {
   currency: string;
   placed_at: Date;
   syncing: boolean;
+  cursor_t: string;
+}
+
+// One row of the admin "all orders" query (raw SQL, snake_case).
+interface AdminListRow {
+  id: string;
+  user_id: string;
+  customer_email: string | null;
+  status: string;
+  payment_status: string | null;
+  title: string | null;
+  item_count: number | null;
+  total_paise: number;
+  currency: string;
+  created_at: Date;
   cursor_t: string;
 }
 
@@ -138,6 +154,67 @@ export class OrdersService {
         ? encodeCursor({ t: page[take - 1].cursor_t, id: page[take - 1].id })
         : null,
     };
+  }
+
+  /**
+   * ADMIN: every customer's orders, newest first, optionally one status.
+   * The status comes from the write model (always current: an admin acts on
+   * it); title / payment status / item count come from the read model when it
+   * has caught up. Same (created_at, id) cursor as "My orders".
+   */
+  async listAll(limit: number, cursor?: string, status?: OrderStatus) {
+    const take = Math.min(Math.max(limit, 1), MAX_LIMIT);
+    const after = cursor ? decodeCursor(cursor) : null;
+
+    const rows: AdminListRow[] = await this.orders.query(
+      `SELECT o.id, o.user_id, o.customer_email, o.status, v.payment_status, v.title,
+              COALESCE(v.item_count,
+                       (SELECT SUM(i.quantity)::int FROM order_items i WHERE i.order_id = o.id)) AS item_count,
+              o.total_paise, o.currency, o.created_at,
+              to_char(o.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_t
+         FROM orders o
+         LEFT JOIN order_views v ON v.order_id = o.id
+        WHERE ($1::varchar IS NULL OR o.status = $1)
+          AND ($2::timestamptz IS NULL OR (o.created_at, o.id) < ($2::timestamptz, $3::uuid))
+        ORDER BY o.created_at DESC, o.id DESC
+        LIMIT $4`,
+      [status ?? null, after?.t ?? null, after?.id ?? null, take + 1],
+    );
+    const hasMore = rows.length > take;
+    const page = rows.slice(0, take);
+
+    return {
+      items: page.map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        customerEmail: r.customer_email,
+        status: r.status,
+        paymentStatus: r.payment_status,
+        title: r.title,
+        itemCount: r.item_count,
+        totalPaise: r.total_paise,
+        currency: r.currency,
+        createdAt: r.created_at,
+      })),
+      nextCursor: hasMore
+        ? encodeCursor({ t: page[take - 1].cursor_t, id: page[take - 1].id })
+        : null,
+    };
+  }
+
+  /** ADMIN: any order with its items (write model). */
+  async findAny(id: string): Promise<Order> {
+    const order = await this.orders.findOne({
+      where: { id },
+      relations: { items: true },
+    });
+    if (!order) {
+      throw new NotFoundException({
+        code: 'ORDER_NOT_FOUND',
+        message: 'Order not found',
+      });
+    }
+    return order;
   }
 
   /** The order's timeline, built from events of order AND payment. */
