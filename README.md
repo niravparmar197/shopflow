@@ -94,7 +94,30 @@ shopflow/
 npm install
 ```
 
-### Run the whole stack locally (PowerShell)
+### Start everything (every day)
+
+After the one-time setup below, one command starts the infrastructure, all 7 services and the web app, each in its own window:
+
+```powershell
+cd F:\projects\shopflow
+.\scripts\start-all.ps1 -Web ..\shopflow-frontend   # leave out -Web for the backend only
+```
+
+| What | URL |
+|---|---|
+| Web app | http://localhost:5000 |
+| Gateway / API docs | http://localhost:3000 · http://localhost:3000/docs |
+| Kafka UI · Jaeger · Mailpit · Grafana | http://localhost:8081 · :16686 · :8025 · :3010 |
+
+Stop everything (the windows, then Docker; data is kept):
+
+```powershell
+.\scripts\stop-all.ps1
+```
+
+If PowerShell blocks the scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (once).
+
+### Run the whole stack locally (first-time setup, PowerShell)
 
 **1. Infrastructure** (Postgres 5434, Mongo 27017, Redis 6380, Kafka 9092, MinIO 9002, Jaeger 16686, Mailpit 8025, Grafana 3010):
 
@@ -126,10 +149,10 @@ npm run seed:product                      # 60 sample products (catalog only)
 **4. Start the 7 services** (each in its own window, with watch mode):
 
 ```powershell
-foreach ($a in 'user','product','order','inventory','payment','notification','gateway') {
-  Start-Process powershell -ArgumentList '-NoExit', '-Command', "npx nest start $a --watch"
-}
+.\scripts\start-all.ps1          # Docker + the 7 services (add -Web ..\shopflow-frontend for the web app)
 ```
+
+The same thing by hand, in 7 terminals: `npx nest start <service> --watch` for user, product, order, inventory, payment, notification and gateway.
 
 The gateway is on **http://localhost:3000**, and the API docs are at **http://localhost:3000/docs**.
 
@@ -593,6 +616,8 @@ CloudWatch Logs + alarms (5xx, p95, unhealthy targets, CPU) ─▶ SNS email
 | `npm run migration:run:order`                                                 | Apply order service migrations                                     |
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
 | `.\scripts\seed-stock.ps1 -Email <admin> -Password <pw> [-Qty 100]`          | Give every product stock through the API (dev only)                |
+| `.\scripts\start-all.ps1 [-Web ..\shopflow-frontend]`                         | Start Docker + the 7 services (+ the web app), each in a window    |
+| `.\scripts\stop-all.ps1`                                                      | Stop those windows and the Docker infrastructure (data is kept)    |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
 | `npm run kafka:topics`                                                        | Create the Kafka topics (idempotent; `KAFKA_RF=3` in production)   |
 | `npm run dlq:replay -- <group>`                                               | Send a consumer group's dead letters back to their topic           |
