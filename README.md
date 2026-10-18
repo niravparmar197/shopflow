@@ -2,11 +2,13 @@
 
 An e-commerce backend built as **7 NestJS microservices** in one monorepo: REST at the edge, **gRPC** between services, **Kafka** events with a transactional outbox, a **choreography saga** for checkout, and **Terraform + GitHub Actions** deploys to **AWS**.
 
-> **Status:** F0–F11 done. Live on AWS (Stage 1, on demand) with CI/CD, Trivy-gated images, health-checked deploys and automatic rollback.
+**Web app:** [shopflow-frontend](https://github.com/niravparmar197/shopflow-frontend), React micro frontends (a shell + catalog, cart and checkout remotes, joined at runtime with Module Federation) on top of this API. See [Web app](#web-app-micro-frontends).
+
+> **Status:** F0–F11 done. Live on AWS (Stage 1, on demand) with CI/CD, Trivy-gated images, health-checked deploys and automatic rollback. The web app covers browse → cart → order → pay → tracking.
 
 ```mermaid
 flowchart LR
-  C[Client] -->|HTTPS| E[Edge: Caddy on Stage 1 / CloudFront + ALB on Stage 2]
+  C[Web app<br/>shopflow-frontend] -->|HTTPS| E[Edge: Caddy on Stage 1 / CloudFront + ALB on Stage 2]
   E --> G[gateway<br/>JWT, rate limits, blue-green switch]
   G --> U[user] & P[product] & O[order] & I[inventory] & PAY[payment] & N[notification]
   O -- gRPC prices --> P
@@ -55,26 +57,27 @@ Imported via TypeScript path aliases (see `tsconfig.json`).
 | `proto`      | `@app/proto`      | gRPC protobuf definitions                                    |
 | `resilience` | `@app/resilience` | Retry + circuit breaker + timeout for calls to other systems |
 | `scheduler`  | `@app/scheduler`  | Redis lock + LeaderJob base for scheduled jobs on many pods  |
+| `observability` | `@app/observability` | OpenTelemetry tracing setup + Prometheus metrics helpers |
 
 ## Project structure
 
 ```
 shopflow/
-├── apps/
-│   ├── gateway/
-│   ├── inventory/
-│   ├── notification/
-│   ├── order/
-│   ├── payment/
-│   ├── product/
-│   └── user/
-├── libs/
-│   ├── common/
-│   ├── events/
-│   ├── kafka/
-│   └── proto/
-├── nest-cli.json      # monorepo project definitions
-└── package.json
+├── apps/                 # the 7 services (each: src/, test/, .env.example)
+│   ├── gateway/  user/  product/  order/  inventory/  payment/  notification/
+├── libs/                 # shared code (path aliases @app/*)
+│   ├── common/  events/  kafka/  proto/  resilience/  scheduler/  observability/
+├── infra/
+│   ├── docker-compose.yml        # local infrastructure (Postgres, Mongo, Redis, Kafka, MinIO, Jaeger, ...)
+│   ├── docker-compose.prod.yml   # the 7 services as containers
+│   ├── terraform/                # AWS: bootstrap, stage1, stage2
+│   └── grafana/ prometheus/ alertmanager/ postgres/
+├── deploy/stage1/        # the Stage 1 bundle (compose, Caddy, deploy.sh)
+├── docs/                 # ADRs, runbook, deploy guide, exported OpenAPI specs
+├── scripts/              # dev and ops scripts (see Scripts)
+├── load-tests/           # k6 flash-sale test
+├── Dockerfile            # one multi-stage image for every service
+└── nest-cli.json         # monorepo project definitions
 ```
 
 ## Getting started
@@ -91,17 +94,85 @@ shopflow/
 npm install
 ```
 
-### Set up locally
+### Start everything (every day)
 
-```bash
-docker compose -f infra/docker-compose.yml up -d   # Postgres (5434), Redis (6380), MinIO (9002, console 9003), ...
-cp apps/user/.env.example apps/user/.env           # then set USER/PASSWORD in DATABASE_URL (shop/shop locally)
-cp apps/gateway/.env.example apps/gateway/.env
-node scripts/generate-jwt-keys.js                  # writes keys/ (git-ignored)
-npm run migration:run:user
+After the one-time setup below, one command starts the infrastructure, all 7 services and the web app, each in its own window:
+
+```powershell
+cd F:\projects\shopflow
+.\scripts\start-all.ps1 -Web ..\shopflow-frontend   # leave out -Web for the backend only
 ```
 
-### Run a service
+| What | URL |
+|---|---|
+| Web app | http://localhost:5000 |
+| Gateway / API docs | http://localhost:3000 · http://localhost:3000/docs |
+| Kafka UI · Jaeger · Mailpit · Grafana | http://localhost:8081 · :16686 · :8025 · :3010 |
+
+Stop everything (the windows, then Docker; data is kept):
+
+```powershell
+.\scripts\stop-all.ps1
+```
+
+If PowerShell blocks the scripts: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (once).
+
+### Run the whole stack locally (first-time setup, PowerShell)
+
+**1. Infrastructure** (Postgres 5434, Mongo 27017, Redis 6380, Kafka 9092, MinIO 9002, Jaeger 16686, Mailpit 8025, Grafana 3010):
+
+```powershell
+docker compose -f infra/docker-compose.yml up -d
+```
+
+**2. Config and keys** (once):
+
+```powershell
+foreach ($a in 'gateway','user','product','order','inventory','payment','notification') {
+  Copy-Item "apps/$a/.env.example" "apps/$a/.env"
+}
+node scripts/generate-jwt-keys.js        # writes keys/ (git-ignored)
+```
+
+Then edit the `.env` files:
+- `DATABASE_URL`: replace `USER:PASSWORD` with `shop:shop` (user, order, inventory, payment).
+- `apps/payment/.env`: set `FAKE_WEBHOOK_SECRET` to any long random string. The fake payment provider refuses to start without it.
+
+**3. Database, topics, sample data:**
+
+```powershell
+npm run migration:run:user; npm run migration:run:order; npm run migration:run:payment; npm run migration:run:inventory
+npm run kafka:topics
+npm run seed:product                      # 60 sample products (catalog only)
+```
+
+**4. Start the 7 services** (each in its own window, with watch mode):
+
+```powershell
+.\scripts\start-all.ps1          # Docker + the 7 services (add -Web ..\shopflow-frontend for the web app)
+```
+
+The same thing by hand, in 7 terminals: `npx nest start <service> --watch` for user, product, order, inventory, payment, notification and gateway.
+
+The gateway is on **http://localhost:3000**, and the API docs are at **http://localhost:3000/docs**.
+
+**5. An admin user and stock** (once). Products from the seed have **no stock**, and an order for an item without stock is cancelled (`OUT_OF_STOCK`) before payment.
+
+1. Sign up (in the web app or with `POST /v1/auth/signup`).
+2. Make yourself admin, then log in again (the role is in the token):
+   ```powershell
+   docker exec -it shopflow-postgres psql -U shop -d users_db -c "UPDATE users SET role='admin' WHERE email='you@example.com';"
+   ```
+3. Give every product stock:
+   ```powershell
+   .\scripts\seed-stock.ps1 -Email you@example.com -Password YourPassword1
+   ```
+
+**6. The web app:** clone [shopflow-frontend](https://github.com/niravparmar197/shopflow-frontend), then run `npm install` and `npm run dev`, and open **http://localhost:5000**. Its dev server sends `/v1` to the gateway on :3000.
+
+> All 7 services as containers instead: see [Production images](#production-images-f11).
+
+### Run one service
 
 Pass the project name to the Nest CLI:
 
@@ -161,6 +232,7 @@ Admin  → presigned POST ──▶ S3 / MinIO  (server never handles the file)
 - Gateway → Product over **gRPC** (proto contract in `libs/proto`), 2 s deadline, error mapping
 - Redis cache-aside: single-flight, TTL jitter, negative cache, versioned list keys, fail-open
 - Optimistic locking with `version` (409 on stale update)
+- Admin create / update / image confirm return the **same product shape as the public API** (`id`, image URLs), documented with response DTOs in Swagger
 - Images: S3 presigned POST (5 MB, type locked) → `tmp/` → confirm → `products/`; `tmp/` auto-deleted after 1 day
 - Tests: unit (cache, images with S3 mocked) + integration with real MongoDB + Redis via Testcontainers (`npm run test:e2e:product`), covering pagination, roles, 409s, cache invalidation, concurrent edits and the gRPC contract
 
@@ -267,7 +339,8 @@ PENDING ──webhook success──► SUCCEEDED ──order.cancelled──► 
 - **A declined card is not a failed payment**: the user can try again until `expires_at` (`PAYMENT_TTL_MINUTES`, 15). Only the expiry is final.
 - **Sweeper** (`PAYMENT_SWEEP_MS`, 30 s, every pod): `FOR UPDATE SKIP LOCKED` expires due payments (→ `payment.failed`) and retries pending refunds. Webhook and sweeper both lock the row first, so a payment ends in exactly one final state; a success that arrives after the expiry is refunded automatically.
 - **Refunds**: a 2-minute lease (`refund_attempted_at`), the provider call outside any transaction, then a conditional `REFUND_PENDING → REFUNDED` (+ `payment.refunded`). The payment id is the provider's idempotency key.
-- Dev only: `POST /v1/payments/dev/fake-mode` (`ok` / `fail` / `slow` / `flaky`) and `GET /v1/payments/dev/circuits`.
+- Dev only: `POST /v1/payments/dev/fake-mode` (`ok` / `fail` / `slow` / `flaky`), `GET /v1/payments/dev/circuits`, and `POST /v1/payments/dev/fake-pay/:orderId` `{ "outcome": "succeeded" | "failed" }`, the web app's **Pay / Decline** buttons. It signs a fake webhook on the server (the browser never has the secret) and runs it through the normal webhook path.
+- The payment row is created when the order is **confirmed** (stock reserved), a few seconds after it is placed. Until then checkout answers `404 PAYMENT_NOT_FOUND`, so the client retries. An order cancelled before that (e.g. `OUT_OF_STOCK`) never gets a payment.
 - Tests (`npm run test:e2e:payment`): signatures, dedupe, declined attempts, expiry, late success → refund, refund lease, **webhook vs timeout racing 20×** (always one outcome, one refund per lost race), circuit breaker opening, timeouts, compensation.
 - Decision record: [ADR 0002: payment providers, webhooks, auto-refund](docs/adr/0002-payment-providers-and-refunds.md)
 
@@ -415,6 +488,23 @@ Budget almost spent → freeze risky releases and fix reliability first; plenty 
 
 Tested in `read-model.e2e-spec.ts`: events fed out of order, cancel then late payment + refund, read-your-writes before and after projection, and someone else's order → 404.
 
+## Web app (micro frontends)
+
+The web shop lives in its own repo: **[shopflow-frontend](https://github.com/niravparmar197/shopflow-frontend)** (React 19, Vite, Module Federation). It is a shell plus 3 remotes, one per business area, like the services:
+
+| Web app (remote) | Pages | Calls |
+|---|---|---|
+| shell | header, login, signup | `/v1/auth/*`, `/v1/users/me` |
+| catalog | home, product list, detail | `GET /v1/products` (gRPC behind the gateway) |
+| cart | cart page, header badge | `/v1/cart`, `/v1/cart/coupon` |
+| checkout | place order, pay, my orders, tracking | `/v1/orders`, `/v1/payments` |
+
+What the web app relies on here:
+- **One origin.** The refresh cookie is `httpOnly`, `SameSite=strict`, `path=/v1/auth`, so the web app and `/v1` must share an origin: the Vite proxy in dev, Caddy/CloudFront in production. No CORS is needed.
+- **Error bodies** `{ code, message, details, correlationId }`: the UI switches on `code` (`PRICE_CHANGED`, `SOLD_OUT`, `SERVER_BUSY`, ...) and shows `correlationId` as a reference.
+- **Idempotency-Key + `expectedTotalPaise`** on `POST /v1/orders`: a retry or double click never makes a second order, and a price change is refused instead of charged.
+- **Per-user limits on POST** (cart 30 / 10 s, orders 5 / 10 s, payments 5 / 10 s): the web app spaces its retries to stay below them.
+
 ## API docs (Swagger)
 
 **http://localhost:3000/docs**: one Swagger UI on the gateway, with a dropdown per service (Gateway products, User & Auth, Orders & Cart, Payments, and the admin APIs).
@@ -525,6 +615,9 @@ CloudWatch Logs + alarms (5xx, p95, unhealthy targets, CPU) ─▶ SNS email
 | `npm run migration:generate:user -- apps/user/src/database/migrations/<Name>` | Generate a migration from entity changes                           |
 | `npm run migration:run:order`                                                 | Apply order service migrations                                     |
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
+| `.\scripts\seed-stock.ps1 -Email <admin> -Password <pw> [-Qty 100]`          | Give every product stock through the API (dev only)                |
+| `.\scripts\start-all.ps1 [-Web ..\shopflow-frontend]`                         | Start Docker + the 7 services (+ the web app), each in a window    |
+| `.\scripts\stop-all.ps1`                                                      | Stop those windows and the Docker infrastructure (data is kept)    |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
 | `npm run kafka:topics`                                                        | Create the Kafka topics (idempotent; `KAFKA_RF=3` in production)   |
 | `npm run dlq:replay -- <group>`                                               | Send a consumer group's dead letters back to their topic           |
