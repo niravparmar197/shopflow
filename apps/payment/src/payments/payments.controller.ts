@@ -44,7 +44,10 @@ export class PaymentsController {
    */
   @Post(':orderId/checkout')
   @HttpCode(200)
-  @ApiError(404, 'PAYMENT_NOT_FOUND')
+  @ApiError(
+    404,
+    "PAYMENT_NOT_FOUND (not created yet: the payment is created when the order is CONFIRMED, a few seconds after placing it, so retry; or the order was cancelled first, e.g. OUT_OF_STOCK; or another user's order)",
+  )
   @ApiError(
     409,
     'PAYMENT_NOT_PAYABLE (already paid, failed, ...) | PAYMENT_EXPIRED',
@@ -53,7 +56,7 @@ export class PaymentsController {
   @ApiError(502, 'PAYMENT_PROVIDER_ERROR (the provider rejected the request)')
   @ApiError(
     503,
-    'PAYMENT_PROVIDER_UNAVAILABLE (provider down or circuit open; safe to retry) | PAYMENT_NOT_FOUND_YET (order just placed; retry in a moment)',
+    'PAYMENT_PROVIDER_UNAVAILABLE (provider down or circuit open; safe to retry)',
   )
   checkout(
     @CurrentUser() user: JwtPayload,
