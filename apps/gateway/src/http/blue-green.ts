@@ -13,7 +13,13 @@ import type { NextFunction, Request, Response } from 'express';
  * - Observable: every response says which colour served it (x-served-by) and
  *   is counted per colour + status class.
  */
-export type Handler = (req: Request, res: Response, next: NextFunction) => void;
+// void | Promise: http-proxy-middleware's handler is async (it handles its own
+// errors and replies 502/504), so the promise is not awaited here.
+export type Handler = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => void | Promise<void>;
 export type Color = 'blue' | 'green';
 
 const requests = counter(
@@ -56,6 +62,6 @@ export function blueGreen(
     );
     const handler =
       color === 'green' && routes.green ? routes.green : routes.blue;
-    handler(req, res, next);
+    void handler(req, res, next);
   };
 }
