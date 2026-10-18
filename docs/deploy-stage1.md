@@ -62,6 +62,11 @@ repo as its own image, `shopflow/web:<frontend sha>`, on the same origin as the 
    `STAGE1_DOMAIN`) as here, and an environment `stage1`.
 4. Merge to the frontend `main`: `release-image` → `deploy-stage1` puts the shop live.
 
+**Demo data (empty site after the first deploy):** sign up on the site, then
+`.\scripts\seed-live.ps1 -Email you@example.com -Password YourPassword1`. It makes that user an
+admin (one SQL update through SSM Run Command), adds ~20 sample products through the API and
+gives them stock. Safe to re-run.
+
 **Roll back the web app:** frontend repo → Actions → `deploy-stage1` → Run workflow with an older tag
 (`gh workflow run deploy-stage1 -R niravparmar197/shopflow-frontend -f tag=<sha>`).
 

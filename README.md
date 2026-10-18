@@ -617,6 +617,7 @@ CloudWatch Logs + alarms (5xx, p95, unhealthy targets, CPU) ─▶ SNS email
 | `npm run migration:run:order`                                                 | Apply order service migrations                                     |
 | `npm run seed:product`                                                        | Load 60 sample products (dev only)                                 |
 | `.\scripts\seed-stock.ps1 -Email <admin> -Password <pw> [-Qty 100]`          | Give every product stock through the API (dev only)                |
+| `.\scripts\seed-live.ps1 -Email <you> -Password <pw>`                          | Live Stage 1 demo data: makes you admin (SSM), ~20 products + stock via the API |
 | `.\scripts\start-all.ps1 [-Web ..\shopflow-frontend]`                         | Start Docker + the 7 services (+ the web app), each in a window    |
 | `.\scripts\stop-all.ps1`                                                      | Stop those windows and the Docker infrastructure (data is kept)    |
 | `npm run proto:gen`                                                           | Regenerate types from `libs/proto/src/*.proto` (commit the result) |
