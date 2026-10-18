@@ -1,7 +1,7 @@
 # Start / stop ShopFlow on AWS for a demo, with one command.
 #
 #   .\scripts\demo.ps1 status
-#   .\scripts\demo.ps1 stage1 start      # ~2 min. The always-ready box (Compose + Caddy, DuckDNS)
+#   .\scripts\demo.ps1 stage1 start      # ~2 min. The always-ready box (Compose + Caddy, DuckDNS) + web app
 #   .\scripts\demo.ps1 stage1 stop       # compute stops; data, certs, DNS stay
 #
 #   .\scripts\demo.ps1 stage2 up         # ~15-20 min. Creates everything (Terraform), newest images
@@ -45,6 +45,15 @@ function WaitHealthy($url, [int]$minutes = 15) {
   }
   Write-Host "Not healthy yet. Check the ECS console, CloudWatch Logs (/shopflow/stage2) or an SSM shell." -ForegroundColor Yellow
 }
+# The web app (shopflow-frontend) on the same box: answers once its container is up.
+function WebCheck($url) {
+  try {
+    Invoke-WebRequest "$url/mfe-manifest.json" -UseBasicParsing -TimeoutSec 10 | Out-Null
+    Say "web app OK: $url"
+  } catch {
+    Write-Host "Web app not answering ($url). No web release yet? See the frontend repo's deploy-stage1 workflow." -ForegroundColor Yellow
+  }
+}
 function NewestTag {
   if ($ImageTag) { return $ImageTag }
   aws ecr describe-images --repository-name shopflow/gateway @aws `
@@ -76,6 +85,7 @@ function Stage1($action) {
       aws ec2 wait instance-running --instance-ids $id @aws
       Say "box running (new public IP; DuckDNS follows within ~1 min, containers auto-start)"
       WaitHealthy $domain 8
+      WebCheck $domain
     }
     "stop" {
       aws ec2 stop-instances --instance-ids $id @aws | Out-Null
@@ -134,6 +144,9 @@ function Status {
   if ($id) {
     $st = aws ec2 describe-instances --instance-ids $id @aws --query "Reservations[0].Instances[0].State.Name" --output text
     Say "Stage 1: $st  https://$(SsmValue DUCKDNS_SUBDOMAIN).duckdns.org"
+    $web = SsmValue WEB_IMAGE_TAG
+    if ($web -and $web -ne "none") { $web = $web.Substring(0, [Math]::Min(7, $web.Length)) }
+    Say "         web app version (frontend commit): $web"
   } else { Say "Stage 1: not created" }
   $cluster = TfOut $tf2 "cluster"
   if ($cluster) {
