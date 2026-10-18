@@ -72,7 +72,7 @@ shopflow/
 │   ├── docker-compose.prod.yml   # the 7 services as containers
 │   ├── terraform/                # AWS: bootstrap, stage1, stage2
 │   └── grafana/ prometheus/ alertmanager/ postgres/
-├── deploy/stage1/        # the Stage 1 bundle (compose, Caddy, deploy.sh)
+├── deploy/stage1/        # the Stage 1 bundle (compose, Caddy, deploy.sh, deploy-web.sh)
 ├── docs/                 # ADRs, runbook, deploy guide, exported OpenAPI specs
 ├── scripts/              # dev and ops scripts (see Scripts)
 ├── load-tests/           # k6 flash-sale test
@@ -501,6 +501,7 @@ The web shop lives in its own repo: **[shopflow-frontend](https://github.com/nir
 
 What the web app relies on here:
 - **One origin.** The refresh cookie is `httpOnly`, `SameSite=strict`, `path=/v1/auth`, so the web app and `/v1` must share an origin: the Vite proxy in dev, Caddy/CloudFront in production. No CORS is needed.
+- **Deploy (Stage 1):** its own image `shopflow/web:<sha>` and its own deploy (`deploy/stage1/deploy-web.sh`); Caddy sends `/v1`, `/health`, `/docs` to the gateway and everything else to the web app. See [docs/deploy-stage1.md](docs/deploy-stage1.md#web-app-adr-0007) and [ADR 0007](docs/adr/0007-web-app-on-stage1.md).
 - **Error bodies** `{ code, message, details, correlationId }`: the UI switches on `code` (`PRICE_CHANGED`, `SOLD_OUT`, `SERVER_BUSY`, ...) and shows `correlationId` as a reference.
 - **Idempotency-Key + `expectedTotalPaise`** on `POST /v1/orders`: a retry or double click never makes a second order, and a price change is refused instead of charged.
 - **Per-user limits on POST** (cart 30 / 10 s, orders 5 / 10 s, payments 5 / 10 s): the web app spaces its retries to stay below them.

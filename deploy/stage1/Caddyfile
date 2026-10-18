@@ -1,5 +1,6 @@
 # Caddy: HTTPS with automatic Let's Encrypt certificates (and renewals) for the
-# DuckDNS name, then reverse proxy to the gateway. The ONLY public entry point.
+# DuckDNS name, then reverse proxy to the gateway (API) and the web app (UI).
+# The ONLY public entry point.
 {
 	email {$ACME_EMAIL}
 }
@@ -36,13 +37,21 @@
 			reverse_proxy grafana:3000
 		}
 		# Product images: /assets/products/<key> -> MinIO (only products/ is public-read).
-		handle_path /assets/* {
-			rewrite * /shopflow-products{uri}
+		# ONLY /assets/products/*: the web app's own hashed files are /assets/*.js too.
+		handle_path /assets/products/* {
+			rewrite * /shopflow-products/products{uri}
 			reverse_proxy minio:9000
 		}
-		# Everything else is the API. Caddy sets X-Forwarded-For; the gateway trusts 1 hop.
-		handle {
+		# The API: versioned routes, health probes and Swagger.
+		# Caddy sets X-Forwarded-For; the gateway trusts 1 hop.
+		@api path /v1/* /health /health/* /docs /docs/*
+		handle @api {
 			reverse_proxy gateway:3000
+		}
+		# Everything else is the web app (shell + micro frontends, nginx). Same
+		# origin as /v1, so the httpOnly refresh cookie (SameSite=strict) works.
+		handle {
+			reverse_proxy web:8080
 		}
 	}
 }

@@ -67,6 +67,12 @@ data "aws_iam_policy_document" "ci_deploy" {
       "arn:aws:ssm:${var.region}::document/AWS-RunShellScript",
     ]
   }
+  # The frontend deploy workflow records the live web tag (this ONE parameter).
+  statement {
+    sid       = "RecordWebTag"
+    actions   = ["ssm:PutParameter", "ssm:GetParameter"]
+    resources = [aws_ssm_parameter.web_image_tag.arn]
+  }
   # Accepted: GetCommandInvocation / ListCommandInvocations cannot be scoped to a resource.
   #trivy:ignore:AWS-0057
   statement {

@@ -4,6 +4,7 @@
 #   sudo bash deploy.sh <image-tag>          (run from the extracted bundle folder)
 #
 # 1. copy this bundle to /opt/shopflow/releases/<tag>
+#    (the web app keeps its own tag: WEB_IMAGE_TAG in SSM, see deploy-web.sh)
 # 2. secrets: SSM Parameter Store -> /opt/shopflow/shared/.env (chmod 600) + JWT key files
 # 3. pull images from ECR, `compose up` (migrations run first, as one-off jobs)
 # 4. wait until every service is healthy and HTTPS answers through Caddy
@@ -57,6 +58,16 @@ chmod 400 "$ROOT/keys/"*.pem
 # Caddy wants a bcrypt hash for basic auth, not the plain password.
 ADMIN_HASH=$(docker run --rm caddy:2.8.4 caddy hash-password --plaintext "$(param ADMIN_PASSWORD)")
 
+# The web app is released by the frontend repo; keep whatever tag is live.
+# "none" (or missing) = no web release yet: leave the web service out.
+WEB_TAG=$(param WEB_IMAGE_TAG)
+[ -n "$WEB_TAG" ] || WEB_TAG=none
+PROFILE_ARGS=()
+if [ "$WEB_TAG" != none ]; then
+  PROFILE_ARGS=(--profile web)
+  APPS+=(web)
+fi
+
 REGISTRY="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$REGION.amazonaws.com"
 
 # Single quotes = literal for compose (bcrypt hashes and passwords contain '$').
@@ -64,6 +75,7 @@ q() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
 {
   echo "# written by deploy.sh from SSM - do not edit"
   echo "IMAGE_TAG=$(q "$TAG")"
+  echo "WEB_IMAGE_TAG=$(q "$WEB_TAG")"
   echo "REGISTRY=$(q "$REGISTRY")"
   echo "DOMAIN=$(q "$(param DUCKDNS_SUBDOMAIN).duckdns.org")"
   echo "ACME_EMAIL=$(q "$(param ACME_EMAIL)")"
@@ -78,7 +90,7 @@ chmod 600 "$SHARED/.env"
 umask 022
 DOMAIN="$(param DUCKDNS_SUBDOMAIN).duckdns.org"
 
-compose() { docker compose -p shopflow -f "$1/docker-compose.yml" --env-file "$SHARED/.env" "${@:2}"; }
+compose() { docker compose -p shopflow -f "$1/docker-compose.yml" --env-file "$SHARED/.env" "${PROFILE_ARGS[@]}" "${@:2}"; }
 
 # Keep DuckDNS pointing at us before Caddy asks Let's Encrypt for a certificate.
 /usr/local/bin/duckdns-update || log "WARN: DuckDNS update failed"

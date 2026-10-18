@@ -257,6 +257,24 @@ services:
       RATE_LIMIT_GLOBAL_PER_MIN: ${RATE_LIMIT_GLOBAL_PER_MIN:-100}
     depends_on: [redis, user, product, order, inventory, payment, notification]
 
+  # ================= web =================
+  # The shop UI (shell + 3 micro frontends) as static files in nginx. Built and
+  # released by the shopflow-frontend repo; its tag is WEB_IMAGE_TAG (SSM).
+  # Profile "web": deploy.sh starts it only once a web release exists.
+  web:
+    image: ${REGISTRY}/shopflow/web:${WEB_IMAGE_TAG:-none}
+    profiles: [web]
+    restart: unless-stopped
+    read_only: true # static files only; nginx writes just its temp files
+    tmpfs: [/tmp]
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "3" } }
+
 volumes:
   pgdata:
   mongodata:

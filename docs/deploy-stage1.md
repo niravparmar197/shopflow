@@ -8,7 +8,12 @@ GitHub (merge to main)
                                                           ├─ images: ECR (instance role)
                                                           └─ docker compose up, health check, rollback
 
-Internet ──443──▶ Caddy (Let's Encrypt, DuckDNS name) ──▶ gateway ──▶ 6 services
+shopflow-frontend (merge to main)
+  └─ release-image: build web image → Trivy → ECR shopflow/web:<sha>
+       └─ deploy-stage1: SSM WEB_IMAGE_TAG → SSM Run Command → deploy-web.sh (web only)
+
+Internet ──443──▶ Caddy (Let's Encrypt, DuckDNS name) ──▶ /v1, /health, /docs: gateway ──▶ 6 services
+                                                     └─▶ everything else: web (nginx, the shop UI)
                                                         Postgres, Mongo, Redis, Kafka, MinIO
                                                         Prometheus, Grafana, Jaeger, Mailpit
 ```
@@ -27,19 +32,45 @@ Internet ──443──▶ Caddy (Let's Encrypt, DuckDNS name) ──▶ gatewa
 
 | URL | What | Login |
 |---|---|---|
-| `https://<sub>.duckdns.org/v1/...` | The API | JWT (signup/login) |
+| `https://<sub>.duckdns.org/` | The web shop | Sign up in the app |
+| `/v1/...` | The API | JWT (signup/login) |
 | `/docs` | Swagger UI (all services) | `admin` / SSM `ADMIN_PASSWORD` |
 | `/grafana` | Dashboards | `admin` / SSM `GRAFANA_ADMIN_PASSWORD` |
 | `/jaeger` | Traces | `admin` / SSM `ADMIN_PASSWORD` |
 | `/mail` | Demo inbox (order emails) | `admin` / SSM `ADMIN_PASSWORD` |
 | `/metrics`, `/internal/*` | Blocked at Caddy (404) | - |
 
+## Web app (ADR 0007)
+
+The shop UI ships from the [shopflow-frontend](https://github.com/niravparmar197/shopflow-frontend)
+repo as its own image, `shopflow/web:<frontend sha>`, on the same origin as the API.
+
+| Piece | Where |
+|---|---|
+| ECR repo `shopflow/web` | `infra/terraform/bootstrap` (`var.apps`) |
+| Live web tag `/shopflow/prod/WEB_IMAGE_TAG` + CI right to write it | `infra/terraform/stage1/web.tf`, `iam.tf` |
+| `web` service (profile `web`), Caddy routes | `deploy/stage1/docker-compose.yml`, `Caddyfile` |
+| Deploy only the web container, with rollback | `deploy/stage1/deploy-web.sh` |
+
+**First time (once):**
+1. `terraform apply` in `infra/terraform/bootstrap` (adds the ECR repo), then in
+   `infra/terraform/stage1` (adds the SSM parameter and the CI right). Neither touches the box.
+2. Merge the backend change: Caddy + compose with the `web` service. The tag is still `none`,
+   so `web` is skipped; the API works as before (`/` answers 502 until step 4).
+3. In the frontend repo, add the same GitHub secrets (`AWS_ACCESS_KEY_ID`,
+   `AWS_SECRET_ACCESS_KEY`) and variables (`AWS_REGION`, `ECR_REGISTRY`, `STAGE1_INSTANCE_ID`,
+   `STAGE1_DOMAIN`) as here, and an environment `stage1`.
+4. Merge to the frontend `main`: `release-image` → `deploy-stage1` puts the shop live.
+
+**Roll back the web app:** frontend repo → Actions → `deploy-stage1` → Run workflow with an older tag
+(`gh workflow run deploy-stage1 -R niravparmar197/shopflow-frontend -f tag=<sha>`).
+
 ## Demo-only choices (be ready to explain)
 
 - **Payment runs the fake provider** with `NODE_ENV=development` (only that service), because the
   fake provider is refused in production on purpose. Real keys: `NODE_ENV=production`,
   `PAYMENT_PROVIDER=stripe`, keys in SSM.
-- **Product images stay on the box** (MinIO, served at `/assets/...`). Presigned *upload* URLs point
+- **Product images stay on the box** (MinIO, served at `/assets/products/...`). Presigned *upload* URLs point
   at `minio:9000`, so browser uploads only work in Stage 2 (real S3).
 - **Single box = single point of failure.** Data lives in Docker volumes on the root EBS volume.
   `terraform destroy` deletes it. Stage 2 moves data to RDS / ElastiCache.
@@ -56,7 +87,9 @@ aws ssm start-session --target <instance-id> --region ap-southeast-2 --profile s
 #   docker compose -p shopflow logs -f --tail 50 order
 
 # Redeploy / roll back to any tag already in ECR
-gh workflow run deploy-stage1 -f tag=<git-sha>
+gh workflow run deploy-stage1 -f tag=<git-sha>                                            # backend
+gh workflow run deploy-stage1 -R niravparmar197/shopflow-frontend -f tag=<frontend-sha>    # web app
+# Which versions are live?   cat /opt/shopflow/current   ·   grep WEB_IMAGE_TAG /opt/shopflow/shared/.env
 
 # Stop paying for compute (data stays; the IP changes, DuckDNS follows)
 aws ec2 stop-instances  --instance-ids <id> --region ap-southeast-2 --profile shopflow

@@ -14,7 +14,7 @@ cp infra/prometheus/alerts.yml "$STAGE/prometheus/"
 cp infra/alertmanager/alertmanager.yml "$STAGE/alertmanager/"
 cp -r infra/grafana/provisioning infra/grafana/dashboards "$STAGE/grafana/"
 cp scripts/kafka-topics.js "$STAGE/scripts/"
-chmod +x "$STAGE/deploy.sh"
+chmod +x "$STAGE/deploy.sh" "$STAGE/deploy-web.sh"
 
 mkdir -p "$(dirname "$OUT")"
 tar -czf "$OUT" -C "$STAGE" .
