@@ -11,6 +11,10 @@ import {
   OrderFailedV1Schema,
   OrderShippedV1Schema,
   OrderDeliveredV1Schema,
+  EmailVerificationRequestedV1Schema,
+  PasswordChangedV1Schema,
+  PasswordResetRequestedV1Schema,
+  UserEvents,
   OrderPaidV1Schema,
   PaymentEvents,
   PaymentRefundedV1Schema,
@@ -21,6 +25,7 @@ import {
   KafkaConsumerCore,
   KafkaProducerService,
 } from '@app/kafka';
+import { AccountEmailPlanner } from './commands/account-email-planner';
 import { CommandDispatcher } from './commands/command-dispatcher';
 import { NotificationPlanner } from './commands/notification-planner';
 import { ProjectionService } from './projection/projection.service';
@@ -33,7 +38,11 @@ import { ProjectionService } from './projection/projection.service';
  */
 @Injectable()
 export class NotificationsConsumer extends KafkaConsumerCore {
-  protected readonly topics = [Topics.ORDER_EVENTS, Topics.PAYMENT_EVENTS];
+  protected readonly topics = [
+    Topics.ORDER_EVENTS,
+    Topics.PAYMENT_EVENTS,
+    Topics.USER_EVENTS, // account emails (Phase 2 P3)
+  ];
   protected readonly groupId = 'notification-svc';
   // A NEW notification service must not email customers about every old
   // order still in Kafka. Stateful services catch up; this one must not.
@@ -46,6 +55,10 @@ export class NotificationsConsumer extends KafkaConsumerCore {
     [OrderEvents.SHIPPED]: OrderShippedV1Schema,
     [OrderEvents.DELIVERED]: OrderDeliveredV1Schema,
     [PaymentEvents.REFUNDED]: PaymentRefundedV1Schema,
+    [UserEvents.PASSWORD_RESET_REQUESTED]: PasswordResetRequestedV1Schema,
+    [UserEvents.EMAIL_VERIFICATION_REQUESTED]:
+      EmailVerificationRequestedV1Schema,
+    [UserEvents.PASSWORD_CHANGED]: PasswordChangedV1Schema,
   };
 
   constructor(
@@ -54,12 +67,20 @@ export class NotificationsConsumer extends KafkaConsumerCore {
     config: ConfigService<Env, true>,
     private readonly projection: ProjectionService,
     private readonly planner: NotificationPlanner,
+    private readonly accountPlanner: AccountEmailPlanner,
     private readonly dispatcher: CommandDispatcher,
   ) {
     super(kafka, producer, config);
   }
 
   protected async processEvent(e: EventEnvelope) {
+    if (e.type.startsWith('user.')) {
+      for (const cmd of this.accountPlanner.commandsFor(e)) {
+        await this.dispatcher.dispatch(cmd);
+      }
+      return;
+    }
+
     if (e.type === OrderEvents.CREATED) {
       await this.projection.upsertOrder(e.data as OrderCreatedV1, e.occurredAt);
       return;

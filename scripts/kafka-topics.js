@@ -16,6 +16,8 @@ const TOPICS = [
   { name: 'order-events', retentionMs: 7 * DAY_MS },
   { name: 'inventory-events', retentionMs: 7 * DAY_MS },
   { name: 'payment-events', retentionMs: 7 * DAY_MS },
+  // Short: reset / verify links inside expire in a day anyway.
+  { name: 'user-events', retentionMs: 1 * DAY_MS },
   // Per consumer group: <group>.retry and <group>.dlq (see BaseConsumer).
   { name: 'inventory-svc.retry', retentionMs: 7 * DAY_MS },
   { name: 'inventory-svc.dlq', retentionMs: 14 * DAY_MS }, // longer: a human must look

@@ -64,6 +64,7 @@ export class NotificationsProcessor extends WorkerHost {
         parent: restoreTraceContext(trace),
         attributes: {
           'shopflow.order_id': log?.orderId ?? '',
+          'shopflow.user_id': log?.userId ?? '',
           'job.id': job.id ?? '',
           'job.attempt': job.attemptsMade + 1,
         },

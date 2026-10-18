@@ -5,12 +5,14 @@ export const Topics = {
   ORDER_EVENTS: 'order-events',
   INVENTORY_EVENTS: 'inventory-events',
   PAYMENT_EVENTS: 'payment-events',
+  USER_EVENTS: 'user-events', // key userId (Phase 2 P3)
 } as const;
 
 const PREFIX_TO_TOPIC: Record<string, string> = {
   order: Topics.ORDER_EVENTS,
   stock: Topics.INVENTORY_EVENTS,
   payment: Topics.PAYMENT_EVENTS,
+  user: Topics.USER_EVENTS,
 };
 
 /** 'order.created' → 'order-events'. Throws for an unknown prefix. */

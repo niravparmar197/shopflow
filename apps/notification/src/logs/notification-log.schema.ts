@@ -13,8 +13,12 @@ export class NotificationLog {
   @Prop({ required: true })
   eventId!: string;
 
-  @Prop({ required: true })
-  orderId!: string;
+  // One of the two: what the email is about.
+  @Prop()
+  orderId?: string;
+
+  @Prop()
+  userId?: string; // account emails (Phase 2 P3)
 
   @Prop({ type: String, required: true })
   channel!: NotificationChannel;
@@ -49,5 +53,7 @@ export const NotificationLogSchema =
 NotificationLogSchema.index({ key: 1 }, { unique: true });
 // "What did we send for this order?"
 NotificationLogSchema.index({ orderId: 1, createdAt: -1 });
+// "What did we send to this account?" (sparse: order logs have no userId)
+NotificationLogSchema.index({ userId: 1, createdAt: -1 }, { sparse: true });
 // Find the FAILED ones fast.
 NotificationLogSchema.index({ status: 1, updatedAt: -1 });

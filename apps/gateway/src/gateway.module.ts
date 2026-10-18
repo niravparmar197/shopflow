@@ -130,6 +130,30 @@ export class GatewayModule implements NestModule {
       )
       .forRoutes({ path: 'v1/auth/login', method: RequestMethod.POST });
 
+    // 2b) Account links and password changes (Phase 2 P3): stops flooding
+    //     someone's inbox, guessing link tokens or current passwords.
+    consumer
+      .apply(
+        createRateLimiter(this.redis, {
+          prefix: 'rl:account',
+          points: 10,
+          durationSec: 60,
+          message: 'Too many attempts, try again later',
+        }),
+      )
+      .forRoutes(
+        ...[
+          'forgot-password',
+          'reset-password',
+          'verify-email',
+          'change-password',
+        ].map((name) => ({
+          path: `v1/auth/${name}`,
+          method: RequestMethod.POST,
+        })),
+        { path: 'v1/users/me/verify-email', method: RequestMethod.POST },
+      );
+
     // 3) Protected routes: JWT first, then proxy.
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(userService))

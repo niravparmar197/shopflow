@@ -29,7 +29,13 @@ export class NotificationPlanner {
     const email = (
       template: EmailTemplate,
       vars: Record<string, string | number>,
-    ) => [new SendEmailCommand(e.eventId, view._id, { to, template, vars })];
+    ) => [
+      new SendEmailCommand(
+        e.eventId,
+        { orderId: view._id },
+        { to, template, vars },
+      ),
+    ];
 
     switch (e.type) {
       case OrderEvents.PAID:

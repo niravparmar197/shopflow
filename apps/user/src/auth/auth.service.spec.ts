@@ -11,7 +11,10 @@ describe('AuthService', () => {
       email: u.email,
     })),
   };
-  const service = new AuthService(users as any);
+  const account = { requestVerification: jest.fn() };
+  const em = {};
+  const ds = { transaction: jest.fn((fn: (m: object) => unknown) => fn(em)) };
+  const service = new AuthService(users as any, account as any, ds as any);
 
   const storedUser = async (overrides: object = {}) => ({
     id: '1',
@@ -35,6 +38,12 @@ describe('AuthService', () => {
     const [[saved]] = users.create.mock.calls as [[{ passwordHash: string }]];
     expect(saved.passwordHash).not.toBe('secret123');
     expect(await bcrypt.compare('secret123', saved.passwordHash)).toBe(true);
+    // Same transaction: the verify email can't be lost (or sent for no user).
+    expect(users.create).toHaveBeenCalledWith(expect.anything(), em);
+    expect(account.requestVerification).toHaveBeenCalledWith(
+      em,
+      expect.objectContaining({ id: '1' }),
+    );
   });
 
   it('returns the public user for correct credentials', async () => {

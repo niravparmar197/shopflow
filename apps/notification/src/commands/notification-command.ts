@@ -15,7 +15,8 @@ export interface NotificationCommand {
   readonly payload: Record<string, unknown>;
   readonly log: {
     eventId: string;
-    orderId: string;
+    orderId?: string; // order emails
+    userId?: string; // account emails (Phase 2 P3)
     channel: NotificationChannel;
     template: string;
     to: string;

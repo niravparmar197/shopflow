@@ -6,7 +6,10 @@ export type EmailTemplate =
   | 'order-failed'
   | 'payment-refunded'
   | 'order-shipped'
-  | 'order-delivered';
+  | 'order-delivered'
+  | 'password-reset'
+  | 'verify-email'
+  | 'password-changed';
 
 export interface SendEmailPayload {
   to: string;
@@ -20,12 +23,18 @@ export class SendEmailCommand implements NotificationCommand {
   readonly payload: SendEmailPayload & Record<string, unknown>;
   readonly log: NotificationCommand['log'];
 
-  constructor(eventId: string, orderId: string, payload: SendEmailPayload) {
+  /** `about`: the order or the user account the email is about. */
+  constructor(
+    eventId: string,
+    about: { orderId: string } | { userId: string },
+    payload: SendEmailPayload,
+  ) {
     this.id = `${eventId}-email-${payload.template}`;
     this.payload = { ...payload };
+    // vars are NOT logged: account emails carry one-time links.
     this.log = {
       eventId,
-      orderId,
+      ...about,
       channel: 'email',
       template: payload.template,
       to: payload.to,

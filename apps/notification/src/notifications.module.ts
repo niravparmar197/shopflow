@@ -5,6 +5,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import type { NextFunction, Request, Response } from 'express';
+import { AccountEmailPlanner } from './commands/account-email-planner';
 import { CommandDispatcher } from './commands/command-dispatcher';
 import { NOTIFICATIONS_QUEUE } from './commands/notification-command';
 import { NotificationPlanner } from './commands/notification-planner';
@@ -58,6 +59,7 @@ const bullBoard = isProduction()
     // Kafka → commands on the queue
     ProjectionService,
     NotificationPlanner,
+    AccountEmailPlanner,
     CommandDispatcher,
     NotificationsConsumer,
     // Queue → execute the commands

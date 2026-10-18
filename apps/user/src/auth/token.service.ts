@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Not, Repository } from 'typeorm';
 import { Env, JwtPayload } from '@app/common';
 import { RefreshToken } from '../entities';
 import { PublicUser } from '../users/users.service';
@@ -117,6 +117,30 @@ export class TokenService {
       where: { tokenHash: sha256(rawToken) },
     });
     if (token) await this.revokeFamilyWith(this.repo, token.familyId);
+  }
+
+  /** The login (family) a refresh token belongs to, if it is known. */
+  async familyOf(rawToken: string): Promise<string | undefined> {
+    const token = await this.repo.findOne({
+      where: { tokenHash: sha256(rawToken) },
+    });
+    return token?.familyId;
+  }
+
+  /**
+   * Logs the user out everywhere (after a password change or reset).
+   * `keepFamilyId` keeps the current login alive on a change. Access tokens
+   * already handed out still work until they expire (ACCESS_TOKEN_TTL).
+   */
+  revokeAllForUser(em: EntityManager, userId: string, keepFamilyId?: string) {
+    return em.getRepository(RefreshToken).update(
+      {
+        userId,
+        revokedAt: IsNull(),
+        ...(keepFamilyId ? { familyId: Not(keepFamilyId) } : {}),
+      },
+      { revokedAt: new Date() },
+    );
   }
 
   private revokeFamilyWith(repo: Repository<RefreshToken>, familyId: string) {

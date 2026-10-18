@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { KafkaModule } from '@app/kafka';
+import { AccountTokensService } from './account/account-tokens.service';
+import { AccountService } from './account/account.service';
 import { AddressesController } from './addresses/addresses.controller';
 import { AddressesService } from './addresses/addresses.service';
 import {
@@ -11,11 +15,13 @@ import {
   JWT_AUDIENCE,
   JWT_ISSUER,
   postgresSsl,
+  RedisModule,
 } from '@app/common';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { TokenService } from './auth/token.service';
 import { USER_ENTITIES } from './entities';
+import { AccountHousekeepingJob } from './jobs/account-housekeeping.job';
 import { UsersController } from './users/users.controller';
 import { UsersService } from './users/users.service';
 
@@ -34,6 +40,9 @@ import { UsersService } from './users/users.service';
       }),
     }),
     TypeOrmModule.forFeature(USER_ENTITIES),
+    KafkaModule.forRoot(), // account emails: outbox writer + relay (Phase 2 P3)
+    RedisModule, // lock for the scheduled clean-up job
+    ScheduleModule.forRoot(),
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService<Env, true>) => ({
@@ -55,6 +64,14 @@ import { UsersService } from './users/users.service';
     }),
   ],
   controllers: [AuthController, UsersController, AddressesController],
-  providers: [AuthService, UsersService, TokenService, AddressesService],
+  providers: [
+    AuthService,
+    UsersService,
+    TokenService,
+    AddressesService,
+    AccountService,
+    AccountTokensService,
+    AccountHousekeepingJob,
+  ],
 })
 export class UserModule {}

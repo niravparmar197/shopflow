@@ -43,6 +43,7 @@ services:
     depends_on:
       redis: { condition: service_started }
       user-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully } # account emails (P3)
   product:
     <<: *app
     image: shopflow/product:dev
