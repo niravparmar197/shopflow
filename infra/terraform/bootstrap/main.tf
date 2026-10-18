@@ -27,7 +27,7 @@ variable "alert_email" {
 
 variable "apps" {
   type    = list(string)
-  default = ["gateway", "user", "product", "order", "inventory", "payment", "notification"]
+  default = ["gateway", "user", "product", "order", "inventory", "payment", "notification", "web"] # web = the micro frontends (shopflow-frontend repo)
 }
 
 data "aws_caller_identity" "me" {}

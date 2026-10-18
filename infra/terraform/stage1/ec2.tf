@@ -30,7 +30,11 @@ resource "aws_instance" "box" {
   user_data_replace_on_change = false # editing the script must not destroy the box (and its data)
 
   lifecycle {
-    ignore_changes = [ami] # a newer AMI must not replace the running box
+    # Neither may replace the box (and its data):
+    # - ami: a newer AMI comes out every few weeks
+    # - associate_public_ip_address: AWS reports `false` while the box is STOPPED
+    #   (no public IP then), which Terraform would treat as "forces replacement"
+    ignore_changes = [ami, associate_public_ip_address]
   }
 
   tags = { Name = local.name }
