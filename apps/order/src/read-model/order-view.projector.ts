@@ -5,9 +5,11 @@ import {
   type OrderCancelledV1,
   type OrderConfirmedV1,
   type OrderCreatedV1,
+  type OrderDeliveredV1,
   OrderEvents,
   type OrderFailedV1,
   type OrderPaidV1,
+  type OrderShippedV1,
   PaymentEvents,
   type PaymentFailedV1,
   type PaymentRefundedV1,
@@ -19,7 +21,9 @@ const RANK: Record<string, number> = {
   CONFIRMED: 2,
   PAID: 3,
   FAILED: 3,
-  CANCELLED: 3,
+  CANCELLED: 3, // = PAID: a paid order can still be cancelled (refund)
+  SHIPPED: 4,
+  DELIVERED: 5,
 };
 
 /**
@@ -56,6 +60,14 @@ export class OrderViewProjector {
       case OrderEvents.CANCELLED: {
         const d = e.data as OrderCancelledV1;
         return this.status(m, at, d.orderId, d.userId, 'CANCELLED', d.reason);
+      }
+      case OrderEvents.SHIPPED: {
+        const d = e.data as OrderShippedV1;
+        return this.status(m, at, d.orderId, d.userId, 'SHIPPED');
+      }
+      case OrderEvents.DELIVERED: {
+        const d = e.data as OrderDeliveredV1;
+        return this.status(m, at, d.orderId, d.userId, 'DELIVERED');
       }
       case PaymentEvents.SUCCEEDED: {
         const d = e.data as PaymentSucceededV1;

@@ -24,6 +24,8 @@ const REASONS: Record<string, string> = {
   STOCK_TIMEOUT: 'we could not confirm stock for it in time',
   OUT_OF_STOCK: 'an item in your order went out of stock',
   CARD_DECLINED: 'the card was declined',
+  USER_CANCELLED: 'you cancelled it',
+  ADMIN_CANCELLED: 'we had to cancel it',
 };
 const reasonText = (r: unknown) =>
   REASONS[String(r)] ?? 'of a problem with the order';
@@ -60,6 +62,26 @@ const TEMPLATES: Record<EmailTemplate, (v: Vars) => RenderedEmail> = {
     html: layout(
       'We could not place your order',
       `<p>Sorry, order <b>${esc(v.orderNo)}</b> could not be placed because ${esc(reasonText(v.reason))}.</p>`,
+    ),
+  }),
+  'order-shipped': (v) => ({
+    subject: `Order ${v.orderNo} is on its way`,
+    text: `Good news: order ${v.orderNo} has shipped${v.carrier ? ` with ${v.carrier}` : ''}.${v.trackingNumber ? ` Tracking number: ${v.trackingNumber}.` : ''}`,
+    html: layout(
+      'Your order is on its way',
+      `<p>Order <b>${esc(v.orderNo)}</b> has shipped${v.carrier ? ` with <b>${esc(v.carrier)}</b>` : ''}.</p>${
+        v.trackingNumber
+          ? `\n  <p>Tracking number: <b>${esc(v.trackingNumber)}</b></p>`
+          : ''
+      }`,
+    ),
+  }),
+  'order-delivered': (v) => ({
+    subject: `Order ${v.orderNo} was delivered`,
+    text: `Order ${v.orderNo} was delivered. Thank you for shopping with ShopFlow!`,
+    html: layout(
+      'Delivered!',
+      `<p>Order <b>${esc(v.orderNo)}</b> was delivered. Thank you for shopping with ShopFlow!</p>`,
     ),
   }),
   'payment-refunded': (v) => ({

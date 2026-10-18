@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { OrderItem } from './order-item.entity';
 import { nextStatus } from './order-state';
+import type { ShippingAddress } from './dto/shipping-address.dto';
 import { OrderAction, OrderStatus } from './order-status';
 
 @Entity('orders')
@@ -67,6 +68,24 @@ export class Order {
     nullable: true,
   })
   customerEmail!: string | null;
+
+  // Where it goes (Phase 2): a COPY of the address at checkout, so editing
+  // the address book later never changes a placed order. Null on orders
+  // placed before addresses existed (or by API clients that send none).
+  @Column({ name: 'shipping_address', type: 'jsonb', nullable: true })
+  shippingAddress!: ShippingAddress | null;
+
+  // Set by an admin when it ships (Phase 2).
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  carrier!: string | null;
+
+  @Column({
+    name: 'tracking_number',
+    type: 'varchar',
+    length: 60,
+    nullable: true,
+  })
+  trackingNumber!: string | null;
 
   // When it became CONFIRMED: the payment window counts from here.
   // (updated_at changes on every update, so it can't be used.)

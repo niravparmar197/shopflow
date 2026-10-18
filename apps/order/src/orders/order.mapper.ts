@@ -11,6 +11,9 @@ export function toOrderResponse(order: Order) {
     totalPaise: order.totalPaise,
     couponCode: order.couponCode,
     currency: order.currency,
+    shippingAddress: order.shippingAddress,
+    carrier: order.carrier,
+    trackingNumber: order.trackingNumber,
     items: (order.items ?? []).map((item) => ({
       productId: item.productId,
       name: item.name,

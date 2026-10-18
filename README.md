@@ -219,6 +219,7 @@ Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
 | `POST /v1/auth/refresh` | `rt` cookie  | rotates the cookie, new `accessToken`   |
 | `POST /v1/auth/logout`  | `rt` cookie  | revokes the token family                |
 | `GET /v1/users/me`      | Bearer token | current user                            |
+| `GET/POST /v1/users/me/addresses`, `PATCH/DELETE …/:id` | Bearer token | address book (Phase 2 P2): max 10; the first one is the default; deleting the default makes the newest the default |
 
 ## Products (F2)
 
@@ -282,11 +283,15 @@ POST /v1/orders ─▶ Redis checkout lock (per user)
 
 | Endpoint                      | Auth | Notes                                                                                   |
 | ----------------------------- | ---- | --------------------------------------------------------------------------------------- |
-| `POST /v1/orders`             | user | `Idempotency-Key` header (8–100 chars); body `{ expectedTotalPaise? }`; 10/min per user |
+| `POST /v1/orders`             | user | `Idempotency-Key` header (8–100 chars); body `{ expectedTotalPaise?, shippingAddress? }` (the address is copied onto the order); 10/min per user |
 | `GET /v1/orders?limit&cursor` | user | newest first, cursor pagination (max 50)                                                |
 | `GET /v1/orders/:id`          | user | only your own orders, otherwise 404                                                     |
+| `POST /v1/orders/:id/cancel`  | user | before it ships (PENDING, CONFIRMED, PAID); a paid order is refunded and its stock goes back; otherwise `409` |
 | `GET /v1/admin/orders?status&limit&cursor` | admin | every customer's orders, newest first; optional status; same cursor paging (Phase 2 P1, the web admin panel) |
 | `GET /v1/admin/orders/:id`    | admin | any order with items, `userId` and `customerEmail`                                      |
+| `POST /v1/admin/orders/:id/ship` | admin | PAID → SHIPPED; body `{ carrier?, trackingNumber? }` (Phase 2 P2) |
+| `POST /v1/admin/orders/:id/deliver` | admin | SHIPPED → DELIVERED |
+| `POST /v1/admin/orders/:id/cancel` | admin | same rules as the user cancel (reason `ADMIN_CANCELLED`) |
 
 | Error code                                             | HTTP | Meaning                                                                    |
 | ------------------------------------------------------ | ---- | -------------------------------------------------------------------------- |
@@ -309,7 +314,7 @@ order.created ─▶ Inventory ─┬─▶ stock.reserved ─▶ Order: PENDING
 
 | Topic                           | Key          | Events                                                                              |
 | ------------------------------- | ------------ | ----------------------------------------------------------------------------------- |
-| `order-events`                  | orderId      | `order.created`, `order.confirmed`, `order.failed`, `order.paid`, `order.cancelled` |
+| `order-events`                  | orderId      | `order.created`, `order.confirmed`, `order.failed`, `order.paid`, `order.cancelled`, `order.shipped`, `order.delivered` |
 | `inventory-events`              | orderId      | `stock.reserved`, `stock.failed`                                                    |
 | `payment-events`                | orderId      | `payment.succeeded`, `payment.failed`, `payment.refunded`                           |
 | `<group>.retry` / `<group>.dlq` | original key | failed messages (headers `x-error`, `x-attempt`, `x-original-topic`)                |
@@ -373,6 +378,8 @@ BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SM
 | ------------------ | ------------------------------ |
 | `order.paid`       | Order confirmed                |
 | `order.cancelled`  | Order cancelled (+ the reason) |
+| `order.shipped`    | Your order is on the way (+ courier, tracking) |
+| `order.delivered`  | Your order was delivered       |
 | `order.failed`     | We could not place the order   |
 | `payment.refunded` | Your refund is on the way      |
 

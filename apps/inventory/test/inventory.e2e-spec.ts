@@ -348,16 +348,23 @@ describe('Inventory (e2e)', () => {
     expect(await reservationStatus(orderId)).toBe('RELEASED');
   });
 
-  it('order.cancelled after order.paid → no stock comes back', async () => {
+  it('order.cancelled after order.paid (cancelled before shipping) → the sold units come back ONCE', async () => {
     const orderId = await reservedOrder(2);
     await publish(orderPaid(orderId));
+    await eventually(async () =>
+      expect(await stockOf(A)).toEqual({ available: 3, reserved: 0 }),
+    );
+    // Two different cancel events: only COMMITTED rows move, so once.
     const cancel = orderCancelled(orderId);
     await publish(cancel);
+    await publish(orderCancelled(orderId));
     await eventually(async () =>
       expect(await handled(cancel.eventId)).toBe(true),
     );
-    expect(await stockOf(A)).toEqual({ available: 3, reserved: 0 });
-    expect(await reservationStatus(orderId)).toBe('COMMITTED');
+    await eventually(async () =>
+      expect(await stockOf(A)).toEqual({ available: 5, reserved: 0 }),
+    );
+    expect(await reservationStatus(orderId)).toBe('RETURNED');
   });
 
   it('order.cancelled with no reservation (failed order) → no change', async () => {
