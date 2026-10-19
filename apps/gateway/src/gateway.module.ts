@@ -174,6 +174,21 @@ export class GatewayModule implements NestModule {
       { path: 'v1/products/:id/images/confirm', method: RequestMethod.POST },
     );
 
+    // 5b) Reviews (Phase 2 P5), over HTTP to the product service. Reading
+    //     is public; writing needs a login (the service checks the buyer).
+    const reviewReads = {
+      path: 'v1/products/:id/reviews',
+      method: RequestMethod.GET,
+    };
+    consumer.apply(proxyTo(productService)).forRoutes(reviewReads);
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(productService))
+      .forRoutes(
+        { path: 'v1/products/:id/reviews/mine', method: RequestMethod.GET },
+        { path: 'v1/products/:id/reviews', method: RequestMethod.PUT },
+        { path: 'v1/products/:id/reviews', method: RequestMethod.DELETE },
+      );
+
     // 6) Cart and coupons: JWT here, then proxy. The order service checks it
     //    again, takes the user id only from the token, and checks the admin
     //    role for coupon management. Cart writes get a per-user limit.
@@ -213,7 +228,12 @@ export class GatewayModule implements NestModule {
       .exclude(placeOrder)
       .forRoutes('v1/orders{/*path}');
 
-    // 8) Inventory (admin stock management): JWT here, the inventory
+    // 8) Flash sales running now: public (the deals page, Phase 2 P5).
+    consumer
+      .apply(proxyTo(inventoryService))
+      .forRoutes({ path: 'v1/flash-sales', method: RequestMethod.GET });
+
+    //    Inventory (admin stock management): JWT here, the inventory
     //    service checks the admin role.
     consumer
       .apply(jwtMiddleware(this.jwt), proxyTo(inventoryService))

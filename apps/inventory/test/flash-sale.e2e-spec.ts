@@ -199,6 +199,33 @@ describe('Flash-sale gate (e2e)', () => {
     expect(await flash.activeProductIds()).toEqual([]);
   });
 
+  it('public list: live sales only, units and time left, soonest first (P5)', async () => {
+    const Q = 'd'.repeat(24);
+    await setStock(5);
+    await ds.query(
+      `INSERT INTO stock (product_id, available, version) VALUES ($1, 4, 1)
+       ON CONFLICT (product_id) DO UPDATE SET available = 4, reserved = 0`,
+      [Q],
+    );
+    await flash.start(P, 5, 60);
+    await flash.start(Q, 4, 10); // ends sooner
+    await flash.acquire(P, randomUUID(), 1);
+
+    const res = await internal().get('/flash-sales').expect(200); // no token
+    expect(res.body.items).toEqual([
+      expect.objectContaining({ productId: Q, left: 4, total: 4 }),
+      expect.objectContaining({ productId: P, left: 4, total: 5 }),
+    ]);
+    expect(res.body.items[0].endsInSec).toBeLessThanOrEqual(600);
+    expect(res.body.items[0]).not.toHaveProperty('buyers');
+
+    await flash.end(Q);
+    const after = await internal().get('/flash-sales').expect(200);
+    expect(
+      after.body.items.map((i: { productId: string }) => i.productId),
+    ).toEqual([P]);
+  });
+
   it('/internal/* needs the service token', async () => {
     await setStock(3);
     await flash.start(P, 3, 30);

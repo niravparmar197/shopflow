@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'node:crypto';
 import { isValidObjectId, Model, QueryFilter, Types } from 'mongoose';
 import { CreateProductDto } from './dto/create-product.dto';
-import { ListProductsQuery } from './dto/list-products.query';
+import { ListProductsQuery, type ProductSort } from './dto/list-products.query';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CacheService } from '@app/common';
 import { Product } from './product.schema';
@@ -26,33 +26,71 @@ const LIST_VERSION = 'products:list';
 const productKey = (idOrSlug: string) => `product:v1:${idOrSlug.toLowerCase()}`;
 
 type ProductRecord = Product & { _id: Types.ObjectId };
-type NormalizedListQuery = Omit<ListProductsQuery, 'limit'> & {
+type NormalizedListQuery = Omit<ListProductsQuery, 'limit' | 'sort'> & {
   limit: number;
+  sort: ProductSort;
 };
 
-// Opaque to clients: where the previous page ended (createdAt + _id tie-breaker).
+// Opaque to clients: where the previous page ended. `t` = createdAt (newest
+// first), `p` = price (price sorts), `id` = _id as the tie-breaker, `s` = the
+// sort it belongs to (a cursor from another sort is refused). Cursors from
+// before sorting existed have no `s` and mean "newest".
 interface Cursor {
-  t: string;
+  s?: ProductSort;
+  t?: string;
+  p?: number;
   id: string;
 }
 
 const encodeCursor = (c: Cursor) =>
   Buffer.from(JSON.stringify(c)).toString('base64url');
 
-function decodeCursor(raw: string): { createdAt: Date; id: Types.ObjectId } {
+/** The filter for "after this cursor" in the given sort order. */
+function afterCursor(raw: string, sort: ProductSort): QueryFilter<Product> {
   try {
     const c = JSON.parse(
       Buffer.from(raw, 'base64url').toString(),
     ) as Partial<Cursor>;
-    const createdAt = new Date(c.t ?? '');
-    if (Number.isNaN(createdAt.getTime()) || !isValidObjectId(c.id)) {
+    if ((c.s ?? 'newest') !== sort || !isValidObjectId(c.id)) {
       throw new Error('bad cursor');
     }
-    return { createdAt, id: new Types.ObjectId(c.id) };
+    const id = new Types.ObjectId(c.id);
+    if (sort === 'newest') {
+      const createdAt = new Date(c.t ?? '');
+      if (Number.isNaN(createdAt.getTime())) throw new Error('bad cursor');
+      return {
+        $or: [
+          { createdAt: { $lt: createdAt } },
+          { createdAt, _id: { $lt: id } }, // same time: tie-break by _id
+        ],
+      };
+    }
+    if (!Number.isInteger(c.p)) throw new Error('bad cursor');
+    const op = sort === 'price_asc' ? '$gt' : '$lt';
+    return {
+      $or: [
+        { pricePaise: { [op]: c.p } },
+        { pricePaise: c.p, _id: { [op]: id } },
+      ],
+    };
   } catch {
     throw new BadRequestException('Invalid cursor');
   }
 }
+
+const SORT_SPEC: Record<ProductSort, Record<string, 1 | -1>> = {
+  newest: { createdAt: -1, _id: -1 },
+  price_asc: { pricePaise: 1, _id: 1 },
+  price_desc: { pricePaise: -1, _id: -1 },
+};
+
+/** A stored product as the API shows it: rating average instead of the sum. */
+export const ratingOf = (p: { ratingSum?: number; ratingCount?: number }) => ({
+  ratingAvg: p.ratingCount
+    ? Math.round(((p.ratingSum ?? 0) / p.ratingCount) * 10) / 10
+    : 0,
+  ratingCount: p.ratingCount ?? 0,
+});
 
 const isDuplicateKey = (err: unknown) =>
   (err as { code?: number } | null)?.code === MONGO_DUPLICATE_KEY;
@@ -109,6 +147,7 @@ export class ProductsService {
       q: q.q,
       cursor: q.cursor,
       limit: Math.min(Math.max(Math.trunc(q.limit) || 20, 1), MAX_LIMIT),
+      sort: q.sort ?? 'newest',
     };
     const version = await this.cache.getVersion(LIST_VERSION);
     const hash = createHash('sha1').update(JSON.stringify(query)).digest('hex');
@@ -131,19 +170,14 @@ export class ProductsService {
     }
     if (q.q) filter.$text = { $search: q.q };
 
-    // Cursor pagination: "items older than the last one I saw". Unlike
-    // ?page=N it doesn't skip rows and doesn't shift when products are added.
-    if (q.cursor) {
-      const { createdAt, id } = decodeCursor(q.cursor);
-      filter.$or = [
-        { createdAt: { $lt: createdAt } },
-        { createdAt, _id: { $lt: id } }, // same timestamp: break the tie by _id
-      ];
-    }
+    // Cursor pagination: "items after the last one I saw" in this order.
+    // Unlike ?page=N it doesn't skip rows and doesn't shift when products
+    // are added. $and keeps it apart from the search filter.
+    if (q.cursor) filter.$and = [afterCursor(q.cursor, q.sort)];
 
     const items = await this.model
       .find(filter)
-      .sort({ createdAt: -1, _id: -1 })
+      .sort(SORT_SPEC[q.sort])
       .limit(q.limit + 1) // one extra tells us whether there is a next page
       .lean();
 
@@ -155,12 +189,52 @@ export class ProductsService {
       items: page,
       nextCursor:
         hasMore && last
-          ? encodeCursor({
-              t: last.createdAt.toISOString(),
-              id: String(last._id),
-            })
+          ? encodeCursor(
+              q.sort === 'newest'
+                ? {
+                    s: q.sort,
+                    t: last.createdAt.toISOString(),
+                    id: String(last._id),
+                  }
+                : { s: q.sort, p: last.pricePaise, id: String(last._id) },
+            )
           : null,
     };
+  }
+
+  /** Categories with how many active products each (Phase 2 P5). */
+  async categories(): Promise<{ slug: string; count: number }[]> {
+    const version = await this.cache.getVersion(LIST_VERSION);
+    const result = await this.cache.getOrSet(
+      `products:categories:v${version}`,
+      LIST_TTL_SEC,
+      async () => {
+        const rows = await this.model.aggregate<{ _id: string; count: number }>(
+          [
+            { $match: { isActive: true } },
+            { $group: { _id: '$category', count: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ],
+        );
+        return rows.map((r) => ({ slug: r._id, count: r.count }));
+      },
+    );
+    return result!;
+  }
+
+  /**
+   * Moves the rating totals after a review is written or removed (atomic
+   * $inc). `sum` / `count` are the change, e.g. +4 / +1 for a new 4-star.
+   */
+  async adjustRating(productId: string, sum: number, count: number) {
+    const updated = await this.model
+      .findByIdAndUpdate(
+        productId,
+        { $inc: { ratingSum: sum, ratingCount: count } },
+        { returnDocument: 'after' },
+      )
+      .lean();
+    if (updated) await this.invalidate([updated._id, updated.slug]);
   }
 
   /** Active products among the given ids; unknown or invalid ids are skipped. */

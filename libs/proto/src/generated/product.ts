@@ -22,6 +22,8 @@ export interface ListProductsRequest {
   q: string;
   cursor: string;
   limit: number;
+  /** "" or "newest" | "price_asc" | "price_desc" (Phase 2 P5) */
+  sort: string;
 }
 
 export interface Product {
@@ -37,6 +39,9 @@ export interface Product {
   createdAt: string;
   /** Free-form per-category attributes ({"ram":"8GB"}), as a JSON object string. */
   attributesJson: string;
+  /** Reviews (Phase 2 P5): average 1-5 (0 when none) and how many. */
+  ratingAvg: number;
+  ratingCount: number;
 }
 
 export interface ListProductsResponse {
@@ -53,6 +58,20 @@ export interface GetProductsByIdsResponse {
   items: Product[];
 }
 
+export interface ListCategoriesRequest {
+}
+
+export interface Category {
+  /** "phones" */
+  slug: string;
+  /** active products in it */
+  count: number;
+}
+
+export interface ListCategoriesResponse {
+  items: Category[];
+}
+
 export const PRODUCT_PACKAGE_NAME = "product";
 
 export interface ProductServiceClient {
@@ -63,6 +82,10 @@ export interface ProductServiceClient {
   /** used by order (F3) */
 
   getProductsByIds(request: GetProductsByIdsRequest, metadata?: Metadata): Observable<GetProductsByIdsResponse>;
+
+  /** Phase 2 P5 */
+
+  listCategories(request: ListCategoriesRequest, metadata?: Metadata): Observable<ListCategoriesResponse>;
 }
 
 export interface ProductServiceController {
@@ -79,11 +102,18 @@ export interface ProductServiceController {
     request: GetProductsByIdsRequest,
     metadata?: Metadata,
   ): Promise<GetProductsByIdsResponse> | Observable<GetProductsByIdsResponse> | GetProductsByIdsResponse;
+
+  /** Phase 2 P5 */
+
+  listCategories(
+    request: ListCategoriesRequest,
+    metadata?: Metadata,
+  ): Promise<ListCategoriesResponse> | Observable<ListCategoriesResponse> | ListCategoriesResponse;
 }
 
 export function ProductServiceControllerMethods() {
   return function (constructor: Function) {
-    const grpcMethods: string[] = ["getProduct", "listProducts", "getProductsByIds"];
+    const grpcMethods: string[] = ["getProduct", "listProducts", "getProductsByIds", "listCategories"];
     for (const method of grpcMethods) {
       const descriptor: any = Reflect.getOwnPropertyDescriptor(constructor.prototype, method);
       GrpcMethod("ProductService", method)(constructor.prototype[method], method, descriptor);

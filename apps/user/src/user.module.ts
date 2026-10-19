@@ -24,6 +24,8 @@ import { USER_ENTITIES } from './entities';
 import { AccountHousekeepingJob } from './jobs/account-housekeeping.job';
 import { UsersController } from './users/users.controller';
 import { UsersService } from './users/users.service';
+import { WishlistController } from './wishlist/wishlist.controller';
+import { WishlistService } from './wishlist/wishlist.service';
 
 @Module({
   imports: [
@@ -63,7 +65,12 @@ import { UsersService } from './users/users.service';
       }),
     }),
   ],
-  controllers: [AuthController, UsersController, AddressesController],
+  controllers: [
+    AuthController,
+    UsersController,
+    AddressesController,
+    WishlistController,
+  ],
   providers: [
     AuthService,
     UsersService,
@@ -72,6 +79,7 @@ import { UsersService } from './users/users.service';
     AccountService,
     AccountTokensService,
     AccountHousekeepingJob,
+    WishlistService,
   ],
 })
 export class UserModule {}

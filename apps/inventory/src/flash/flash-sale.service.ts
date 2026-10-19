@@ -148,6 +148,22 @@ export class FlashSaleService {
     };
   }
 
+  /** Every live sale with units left and time left (public page, P5). */
+  async activeSales() {
+    const ids = await this.activeProductIds();
+    const all = await Promise.all(ids.map((id) => this.status(id)));
+    return all
+      .filter((s) => s.active)
+      .map((s) => ({
+        productId: s.productId,
+        left: s.left!,
+        total: s.total!,
+        maxPerUser: s.maxPerUser!,
+        endsInSec: s.endsInSec!,
+      }))
+      .sort((a, b) => a.endsInSec - b.endsInSec); // ending soonest first
+  }
+
   /** Products on sale right now (also drops sales that expired). */
   async activeProductIds(): Promise<string[]> {
     const ids = await this.redis.smembers(ACTIVE);

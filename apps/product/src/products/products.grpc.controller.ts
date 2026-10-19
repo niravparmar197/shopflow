@@ -11,7 +11,8 @@ import {
   ProductServiceControllerMethods,
 } from '@app/proto';
 import { Product } from './product.schema';
-import { ProductsService } from './products.service';
+import { type ProductSort, SORTS } from './dto/list-products.query';
+import { ProductsService, ratingOf } from './products.service';
 
 type StoredProduct = Product & { _id: unknown };
 
@@ -29,6 +30,7 @@ const toMessage = (p: StoredProduct, assetBase: string): ProductMessage => ({
   version: p.version ?? 0,
   createdAt: new Date(p.createdAt).toISOString(),
   attributesJson: JSON.stringify(p.attributes ?? {}),
+  ...ratingOf(p),
 });
 
 // Internal API for other services (the gateway, later order). No auth here:
@@ -67,6 +69,10 @@ export class ProductsGrpcController implements ProductServiceController {
       q: req.q || undefined,
       cursor: req.cursor || undefined,
       limit: req.limit, // clamped by the service
+      // Unknown values fall back to newest (the gateway validates them).
+      sort: SORTS.includes(req.sort as ProductSort)
+        ? (req.sort as ProductSort)
+        : undefined,
     });
     return {
       items: res.items.map((p) => this.toMessage(p)),
@@ -78,6 +84,11 @@ export class ProductsGrpcController implements ProductServiceController {
     this.logCall('GetProductsByIds', metadata);
     const items = await this.products.findByIds(req.ids);
     return { items: items.map((p) => this.toMessage(p)) };
+  }
+
+  async listCategories(_req: unknown, metadata?: Metadata) {
+    this.logCall('ListCategories', metadata);
+    return { items: await this.products.categories() };
   }
 
   private logCall(method: string, metadata?: Metadata) {

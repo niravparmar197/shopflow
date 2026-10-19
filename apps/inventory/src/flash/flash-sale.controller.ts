@@ -80,6 +80,19 @@ export class FlashSaleAdminController {
   }
 }
 
+/** Public, through the gateway: GET /v1/flash-sales (Phase 2 P5). */
+@ApiTags('Flash sales')
+@Controller('flash-sales')
+export class FlashSalePublicController {
+  constructor(private readonly flash: FlashSaleService) {}
+
+  /** Sales running now: units left and seconds left, ending soonest first */
+  @Get()
+  async list() {
+    return { items: await this.flash.activeSales() };
+  }
+}
+
 /** Order → inventory only. The gateway must NEVER route /v1/internal/*. */
 @ApiExcludeController()
 @Controller('internal/flash-sales')

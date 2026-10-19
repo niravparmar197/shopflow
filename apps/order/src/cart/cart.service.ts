@@ -16,6 +16,8 @@ export interface CartLine {
   category?: string;
   unitPricePaise?: number;
   lineTotalPaise?: number;
+  /** The first product photo (Phase 2 P5), when it has one. */
+  image?: string;
   /** false when the product was removed or deactivated since it was added. */
   available: boolean;
 }
@@ -158,6 +160,7 @@ export class CartService {
         category: p.category,
         unitPricePaise: p.pricePaise,
         lineTotalPaise: p.pricePaise * qty,
+        ...(p.images?.[0] ? { image: p.images[0] } : {}),
         available: true,
       };
     });
