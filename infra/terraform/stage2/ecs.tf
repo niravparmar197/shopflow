@@ -166,8 +166,9 @@ locals {
     user = {
       db = "users_db"
       env = {
-        REDIS_URL         = local.redis_url
-        ACCESS_TOKEN_TTL  = "15m"
+        REDIS_URL          = local.redis_url
+        KAFKA_BROKERS      = "${local.data_host}:9092" # account emails (Phase 2 P3)
+        ACCESS_TOKEN_TTL   = "15m"
         REFRESH_TOKEN_DAYS = "7"
       }
       secrets = {
@@ -243,6 +244,7 @@ locals {
         SMTP_HOST        = local.data_host
         SMTP_PORT        = "1025"
         MAIL_FROM        = "ShopFlow <no-reply@shopflow.local>"
+        WEB_URL          = local.public_url # links in reset / verify emails
       }
       secrets = { JWT_PUBLIC_KEY = "${local.ssm}/JWT_PUBLIC_KEY" }
     }

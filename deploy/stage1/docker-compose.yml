@@ -192,6 +192,7 @@ services:
     depends_on:
       redis: { condition: service_started }
       user-migrate: { condition: service_completed_successfully }
+      kafka-topics: { condition: service_completed_successfully } # account emails (P3)
 
   product:
     <<: *app
@@ -242,6 +243,8 @@ services:
     <<: *app
     image: ${REGISTRY}/shopflow/notification:${IMAGE_TAG}
     env_file: env/notification.env
+    environment:
+      WEB_URL: https://${DOMAIN} # links in reset / verify emails
     depends_on:
       mongo: { condition: service_started }
       redis: { condition: service_started }

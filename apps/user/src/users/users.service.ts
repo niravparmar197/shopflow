@@ -1,6 +1,6 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
 import { User } from '../entities';
 
 export type PublicUser = Omit<User, 'passwordHash' | 'refreshTokens'>;
@@ -21,10 +21,15 @@ export class UsersService {
     return this.repo.findOne({ where: { id } });
   }
 
-  async create(data: { email: string; passwordHash: string; name: string }) {
+  /** Pass `em` to create the user inside the caller's transaction. */
+  async create(
+    data: { email: string; passwordHash: string; name: string },
+    em?: EntityManager,
+  ) {
+    const repo = em ? em.getRepository(User) : this.repo;
     try {
-      return await this.repo.save(
-        this.repo.create({
+      return await repo.save(
+        repo.create({
           email: data.email,
           passwordHash: data.passwordHash,
           fullName: data.name,

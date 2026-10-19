@@ -30,6 +30,14 @@ const REASONS: Record<string, string> = {
 const reasonText = (r: unknown) =>
   REASONS[String(r)] ?? 'of a problem with the order';
 
+const hello = (name: string | number | undefined) =>
+  name ? `Hi ${name},` : 'Hi,';
+
+/** A big button; the link is printed too, for mail apps that hide buttons. */
+const button = (href: unknown, label: string) =>
+  `<p style="margin:24px 0"><a href="${esc(href)}" style="background:#4f46e5;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">${esc(label)}</a></p>
+  <p style="color:#666;font-size:13px">Or open this link: <br><a href="${esc(href)}">${esc(href)}</a></p>`;
+
 const layout = (title: string, body: string) => `<!doctype html>
 <html><body style="font-family:Arial,sans-serif;max-width:560px;margin:24px auto;color:#222">
   <h2 style="margin:0 0 16px">${esc(title)}</h2>
@@ -91,6 +99,38 @@ const TEMPLATES: Record<EmailTemplate, (v: Vars) => RenderedEmail> = {
       'Your refund is on the way',
       `<p>We refunded <b>${esc(v.currency)} ${esc(v.amount)}</b> for order <b>${esc(v.orderNo)}</b>.</p>
   <p>It may take 5–7 working days to show in your account.</p>`,
+    ),
+  }),
+  // ---- account (Phase 2 P3) ----
+  'password-reset': (v) => ({
+    subject: 'Reset your ShopFlow password',
+    text: `${hello(v.name)}\n\nOpen this link to choose a new password (it works once, for 30 minutes):\n${v.link}\n\nDidn't ask for this? Ignore this email. Your password stays the same.`,
+    html: layout(
+      'Reset your password',
+      `<p>${esc(hello(v.name))}</p>
+  <p>Click the button to choose a new password. The link works once, for 30 minutes.</p>
+  ${button(v.link, 'Choose a new password')}
+  <p>Didn't ask for this? Ignore this email. Your password stays the same.</p>`,
+    ),
+  }),
+  'verify-email': (v) => ({
+    subject: 'Please confirm your email',
+    text: `${hello(v.name)}\n\nWelcome to ShopFlow! Open this link to confirm your email (valid for 24 hours):\n${v.link}`,
+    html: layout(
+      'Welcome to ShopFlow!',
+      `<p>${esc(hello(v.name))}</p>
+  <p>Please confirm that this is your email address. The link is valid for 24 hours.</p>
+  ${button(v.link, 'Confirm my email')}`,
+    ),
+  }),
+  'password-changed': (v) => ({
+    subject: 'Your ShopFlow password was changed',
+    text: `${hello(v.name)}\n\nYour password was just changed${v.via === 'RESET' ? ' with a reset link' : ''}, and other devices were logged out. If this wasn't you, reset your password now: ${v.link}`,
+    html: layout(
+      'Your password was changed',
+      `<p>${esc(hello(v.name))}</p>
+  <p>Your password was just changed${v.via === 'RESET' ? ' with a reset link' : ''}. Other devices were logged out.</p>
+  <p>If this wasn't you, <a href="${esc(v.link)}">reset your password now</a>.</p>`,
     ),
   }),
 };

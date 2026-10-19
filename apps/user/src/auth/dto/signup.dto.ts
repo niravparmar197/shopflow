@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
-import { IsEmail, IsString, Length, Matches, MaxLength } from 'class-validator';
+import { IsEmail, IsString, Length, MaxLength } from 'class-validator';
+import { IsNewPassword } from './password';
 import { normaliseEmail, trim } from './transforms';
 
 export class SignupDto {
@@ -8,11 +9,7 @@ export class SignupDto {
   @MaxLength(254)
   email!: string;
 
-  @IsString()
-  @Length(8, 72) // bcrypt only uses the first 72 bytes
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
-    message: 'password must contain at least one letter and one number',
-  })
+  @IsNewPassword()
   password!: string;
 
   @Transform(trim)

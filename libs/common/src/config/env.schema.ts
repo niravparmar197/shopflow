@@ -62,6 +62,8 @@ export const envSchema = z.object({
 
   SMTP_HOST: z.string().min(1).optional(),
   SMTP_PORT: z.coerce.number().int().positive().optional(),
+  // The web app's address, for links in emails (reset password, verify).
+  WEB_URL: z.url().default('http://localhost:5000'),
   MAIL_FROM: z.string().min(1).default('ShopFlow <no-reply@shopflow.local>'),
   // First retry delay for notification jobs (then ×2). Tests use ~100 ms.
   NOTIFY_BACKOFF_MS: z.coerce.number().int().positive().default(2_000),

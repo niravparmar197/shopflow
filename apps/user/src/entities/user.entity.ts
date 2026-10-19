@@ -28,6 +28,14 @@ export class User {
   @Column({ name: 'full_name', type: 'varchar', length: 100, nullable: true })
   fullName!: string | null;
 
+  // Indian mobile, 10 digits (Phase 2 P3). Optional.
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  phone!: string | null;
+
+  // Set when the user opens the link from the signup email (Phase 2 P3).
+  @Column({ name: 'email_verified_at', type: 'timestamptz', nullable: true })
+  emailVerifiedAt!: Date | null;
+
   @Column({ type: 'enum', enum: UserRole, default: UserRole.CUSTOMER })
   role!: UserRole;
 

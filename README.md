@@ -218,8 +218,30 @@ Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
 | `POST /v1/auth/login`   | none         | returns `accessToken`, sets `rt` cookie |
 | `POST /v1/auth/refresh` | `rt` cookie  | rotates the cookie, new `accessToken`   |
 | `POST /v1/auth/logout`  | `rt` cookie  | revokes the token family                |
-| `GET /v1/users/me`      | Bearer token | current user                            |
+| `GET /v1/users/me`      | Bearer token | current user (with `phone`, `emailVerifiedAt`) |
+| `PATCH /v1/users/me`    | Bearer token | `{ fullName?, phone? }` (Phase 2 P3); `phone: ""` removes it |
+| `POST /v1/users/me/verify-email` | Bearer token | send the verify email again; `429 RESEND_TOO_SOON` (1/min), `409 ALREADY_VERIFIED` |
+| `POST /v1/auth/verify-email` | none    | `{ token }` from the email link → `{ user }` |
+| `POST /v1/auth/forgot-password` | none | `{ email }` → always `202`, so it never tells who has an account |
+| `POST /v1/auth/reset-password` | none  | `{ token, password }` → `204`; logs out every device |
+| `POST /v1/auth/change-password` | Bearer + `rt` cookie | `{ currentPassword, newPassword }` → `204`; this login stays, other devices are logged out |
 | `GET/POST /v1/users/me/addresses`, `PATCH/DELETE …/:id` | Bearer token | address book (Phase 2 P2): max 10; the first one is the default; deleting the default makes the newest the default |
+
+### Account: verify email, forgot / reset password (Phase 2 P3)
+
+```
+signup / forgot / change ─▶ users_db (user + account_tokens + outbox, ONE transaction)
+outbox ─▶ relay ─▶ user-events ─▶ notification ─▶ email with a link: <WEB_URL>/reset-password#token=…
+```
+
+- **One-time links**: 32 random bytes; only the SHA-256 hash is in `account_tokens`. Reset links live 30 min, verify links 24 h. A link works once (row lock, so a double click is safe), and a new link kills the older one
+- **Token after `#`**: the browser never sends the part after `#` to a server, so the token is not in Caddy, CDN or gateway logs. The web page reads it and POSTs it
+- **No account enumeration**: forgot-password answers `202 {}` for every email; at most 3 reset emails per account per hour (more are ignored quietly)
+- **Sessions**: a reset revokes every refresh token; a change revokes all but the current login (the route sits under `/v1/auth` so the `rt` cookie comes along). Access tokens already issued still work until they expire (15 min)
+- **Verification is soft**: you can shop without it; the web app shows a banner. A reset link also verifies the email (it proved the inbox). Accounts from before P3 count as verified
+- **Rate limit**: 10/min per IP on these routes at the gateway (`rl:account`)
+- **Clean-up job** (hourly, leader lock): published outbox rows after 1 day (they hold raw tokens), used or expired tokens after 7 days, expired refresh tokens after 7 days
+- Errors: `400 INVALID_TOKEN` (unknown, used or replaced), `400 TOKEN_EXPIRED`, `400 WRONG_PASSWORD`, `400 SAME_PASSWORD` (400, not 401: a 401 would look like an ended session to the web app)
 
 ## Products (F2)
 
@@ -317,6 +339,7 @@ order.created ─▶ Inventory ─┬─▶ stock.reserved ─▶ Order: PENDING
 | `order-events`                  | orderId      | `order.created`, `order.confirmed`, `order.failed`, `order.paid`, `order.cancelled`, `order.shipped`, `order.delivered` |
 | `inventory-events`              | orderId      | `stock.reserved`, `stock.failed`                                                    |
 | `payment-events`                | orderId      | `payment.succeeded`, `payment.failed`, `payment.refunded`                           |
+| `user-events`                   | userId       | `user.email-verification-requested`, `user.password-reset-requested`, `user.password-changed` (kept 1 day) |
 | `<group>.retry` / `<group>.dlq` | original key | failed messages (headers `x-error`, `x-attempt`, `x-original-topic`)                |
 
 - **Outbox relay** (`libs/kafka`): at-least-once delivery from the outbox table to Kafka, keyed by aggregate id so one order's events stay in order
@@ -382,7 +405,11 @@ BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SM
 | `order.delivered`  | Your order was delivered       |
 | `order.failed`     | We could not place the order   |
 | `payment.refunded` | Your refund is on the way      |
+| `user.email-verification-requested` | Confirm your email (link) |
+| `user.password-reset-requested` | Reset your password (link) |
+| `user.password-changed` | Your password was changed (security notice) |
 
+- **Account emails** (Phase 2 P3) come from `user-events` and carry the address themselves (no projection). Links use `WEB_URL`. The log stores `userId`, never the link.
 - **Local projection**: notification never calls the order or user service. The buyer's email is snapshotted on the order at checkout and sent in `order.created` (an optional field, so still version 1).
 - **Command pattern**: the planner turns an event into commands (`SendEmailCommand`); the worker runs the handler for the job name. A new channel (SMS) = one command + one handler.
 - **Why a queue between Kafka and SMTP**: Kafka is acknowledged fast, a slow mail server can't stall a partition, and each email retries on its own schedule.

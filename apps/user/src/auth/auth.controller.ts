@@ -6,9 +6,12 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  ApiAcceptedResponse,
+  ApiBearerAuth,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiNoContentResponse,
@@ -16,7 +19,20 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { CookieOptions, Request, Response } from 'express';
-import { ApiError, Env } from '@app/common';
+import {
+  ApiError,
+  CurrentUser,
+  Env,
+  JwtAuthGuard,
+  type JwtPayload,
+} from '@app/common';
+import { AccountService } from '../account/account.service';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from '../account/dto/account.dto';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -32,6 +48,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly tokens: TokenService,
     private readonly users: UsersService,
+    private readonly account: AccountService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -102,6 +119,63 @@ export class AuthController {
     const raw = this.readRefreshCookie(req);
     if (raw) await this.tokens.revokeFamily(raw);
     res.clearCookie(REFRESH_COOKIE, this.cookieOptions());
+  }
+
+  /**
+   * Emails a reset link (valid 30 min) if the account exists. Always 202,
+   * so the answer doesn't tell who has an account.
+   */
+  @Post('forgot-password')
+  @HttpCode(202)
+  @ApiAcceptedResponse({ description: 'Email sent if the account exists' })
+  @ApiError(429, 'RATE_LIMITED (5 per minute per IP)')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.account.forgotPassword(dto.email);
+    return {};
+  }
+
+  /** New password from a reset link. Logs out every device. */
+  @Post('reset-password')
+  @HttpCode(204)
+  @ApiNoContentResponse({ description: 'Password changed; log in again' })
+  @ApiError(400, 'INVALID_TOKEN, TOKEN_EXPIRED, or a weak password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.account.resetPassword(dto.token, dto.password);
+  }
+
+  /** Confirms the email address from the signup link. */
+  @Post('verify-email')
+  @HttpCode(200)
+  @ApiOkResponse({ description: '{ user } with emailVerifiedAt set' })
+  @ApiError(400, 'INVALID_TOKEN or TOKEN_EXPIRED')
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    return { user: await this.account.verifyEmail(dto.token) };
+  }
+
+  /**
+   * Change the password (logged in). Lives under /auth so the refresh
+   * cookie comes along: this login stays, other devices are logged out.
+   */
+  @Post('change-password')
+  @HttpCode(204)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiNoContentResponse({ description: 'Password changed' })
+  @ApiError(400, 'WRONG_PASSWORD, SAME_PASSWORD, or a weak password')
+  @ApiError(401, 'UNAUTHORIZED (missing or expired token)')
+  async changePassword(
+    @CurrentUser() jwt: JwtPayload,
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
+  ) {
+    const raw = this.readRefreshCookie(req);
+    const family = raw ? await this.tokens.familyOf(raw) : undefined;
+    await this.account.changePassword(
+      jwt.sub,
+      dto.currentPassword,
+      dto.newPassword,
+      family,
+    );
   }
 
   private readRefreshCookie(req: Request): string | undefined {
