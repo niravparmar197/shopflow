@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { UnrecoverableError } from 'bullmq';
 import type { SendEmailPayload } from '../commands/send-email.command';
-import { EMAIL_SENDER, type EmailSender } from '../email/email-sender';
+import {
+  EMAIL_SENDER,
+  type EmailSender,
+  PermanentEmailError,
+} from '../email/email-sender';
 import { renderEmail } from '../email/templates';
 import type { CommandHandler } from './command-handler';
 
@@ -20,6 +24,9 @@ export class SendEmailHandler implements CommandHandler<SendEmailPayload> {
         headers: { 'X-Notification-Key': key },
       });
     } catch (err) {
+      if (err instanceof PermanentEmailError) {
+        throw new UnrecoverableError(err.message); // SES: no retry
+      }
       // SMTP 5xx = permanent (bad mailbox, rejected): retrying won't help.
       // 4xx / network errors = temporary → BullMQ retries with backoff.
       const code = (err as { responseCode?: number }).responseCode;

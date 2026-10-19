@@ -18,6 +18,7 @@ import {
   ApiCreatedResponse,
   ApiHeader,
   ApiOkResponse,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -28,6 +29,8 @@ import {
   type JwtPayload,
 } from '@app/common';
 import { IdempotencyService } from '../idempotency/idempotency.service';
+import { InvoicesService } from '../invoices/invoices.service';
+import { sendInvoice } from '../invoices/send-pdf';
 import { OrderActionsService } from './order-actions.service';
 import { CheckoutService } from './checkout.service';
 import { PlaceOrderDto } from './dto/place-order.dto';
@@ -45,6 +48,7 @@ export class OrdersController {
     private readonly orders: OrdersService,
     private readonly idempotency: IdempotencyService,
     private readonly actions: OrderActionsService,
+    private readonly invoices: InvoicesService,
   ) {}
 
   /**
@@ -181,5 +185,19 @@ export class OrdersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return toOrderResponse(await this.orders.findMine(user.sub, id));
+  }
+
+  /** GST tax invoice as a PDF (paid orders only) */
+  @Get(':id/invoice')
+  @ApiProduces('application/pdf')
+  @ApiOkResponse({ description: 'invoice-SF-26-27-000001.pdf' })
+  @ApiError(404, "ORDER_NOT_FOUND (also for other users' orders)")
+  @ApiError(409, 'INVOICE_NOT_READY (not paid yet)')
+  async invoice(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() res: Response,
+  ) {
+    sendInvoice(res, await this.invoices.pdf(id, user.sub));
   }
 }

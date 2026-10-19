@@ -27,6 +27,7 @@ import { OrderReadModelConsumer } from './read-model/order-read-model.consumer';
 import { OrderViewProjector } from './read-model/order-view.projector';
 import { SagaEventsConsumer } from './saga/saga-events.consumer';
 import { OrderSagaService } from './saga/order-saga.service';
+import { InvoicesService } from './invoices/invoices.service';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { OrderSagaService } from './saga/order-saga.service';
     SagaEventsConsumer,
     OrderViewProjector,
     OrderReadModelConsumer,
+    InvoicesService, // GST invoice PDFs (Phase 2 P4)
   ],
 })
 export class OrderModule {}

@@ -7,6 +7,7 @@ import { OrderCustomerEmail1791901816798 } from './1791901816798-OrderCustomerEm
 import { OrderExpiry1791910154100 } from './1791910154100-OrderExpiry';
 import { OrderViews1791956673352 } from './1791956673352-OrderViews';
 import { OrderShipping1792348030665 } from './1792348030665-OrderShipping';
+import { Invoices1792381487048 } from './1792381487048-Invoices';
 
 export const MIGRATIONS = [
   CreateCoupons1791887902198,
@@ -16,4 +17,5 @@ export const MIGRATIONS = [
   OrderExpiry1791910154100,
   OrderViews1791956673352,
   OrderShipping1792348030665,
+  Invoices1792381487048,
 ];

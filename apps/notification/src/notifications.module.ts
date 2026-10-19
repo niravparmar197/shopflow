@@ -1,3 +1,5 @@
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '@app/common';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { BullBoardModule } from '@bull-board/nestjs';
@@ -10,6 +12,7 @@ import { CommandDispatcher } from './commands/command-dispatcher';
 import { NOTIFICATIONS_QUEUE } from './commands/notification-command';
 import { NotificationPlanner } from './commands/notification-planner';
 import { EMAIL_SENDER, SmtpEmailSender } from './email/email-sender';
+import { SesEmailSender } from './email/ses-email-sender';
 import { COMMAND_HANDLERS } from './handlers/command-handler';
 import { SendEmailHandler } from './handlers/send-email.handler';
 import { LogsController } from './logs/logs.controller';
@@ -65,7 +68,15 @@ const bullBoard = isProduction()
     // Queue → execute the commands
     NotificationsProcessor,
     SendEmailHandler,
-    { provide: EMAIL_SENDER, useClass: SmtpEmailSender },
+    // EMAIL_PROVIDER picks the sender; the rest of the service doesn't care.
+    {
+      provide: EMAIL_SENDER,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) =>
+        config.get('EMAIL_PROVIDER', { infer: true }) === 'ses'
+          ? new SesEmailSender(config)
+          : new SmtpEmailSender(config),
+    },
     {
       provide: COMMAND_HANDLERS,
       inject: [SendEmailHandler],
