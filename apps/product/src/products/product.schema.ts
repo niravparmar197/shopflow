@@ -46,6 +46,15 @@ export class Product {
   @Prop({ default: 0 })
   version!: number; // optimistic lock: bumped on every update
 
+  // Reviews (Phase 2 P5). Sum + count, changed with atomic $inc when a
+  // review is written, so two reviews at once can't overwrite each other.
+  // The average is sum / count, worked out when read.
+  @Prop({ default: 0 })
+  ratingSum!: number;
+
+  @Prop({ default: 0 })
+  ratingCount!: number;
+
   createdAt!: Date;
   updatedAt!: Date;
 }
@@ -56,3 +65,4 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 ProductSchema.index({ isActive: 1, category: 1, pricePaise: 1 }); // category + price filter
 ProductSchema.index({ isActive: 1, createdAt: -1, _id: -1 }); // newest first + cursor
 ProductSchema.index({ name: 'text', description: 'text' }); // simple search
+ProductSchema.index({ isActive: 1, pricePaise: 1, _id: 1 }); // sort by price (P5)

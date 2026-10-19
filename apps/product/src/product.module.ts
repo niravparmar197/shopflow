@@ -10,6 +10,10 @@ import { Product, ProductSchema } from './products/product.schema';
 import { ProductsController } from './products/products.controller';
 import { ProductsGrpcController } from './products/products.grpc.controller';
 import { ProductsService } from './products/products.service';
+import { PurchaseCheckClient } from './reviews/purchase-check.client';
+import { Review, ReviewSchema } from './reviews/review.schema';
+import { ReviewsController } from './reviews/reviews.controller';
+import { ReviewsService } from './reviews/reviews.service';
 
 @Module({
   imports: [
@@ -27,7 +31,10 @@ import { ProductsService } from './products/products.service';
           config.get('NODE_ENV', { infer: true }) !== 'production',
       }),
     }),
-    MongooseModule.forFeature([{ name: Product.name, schema: ProductSchema }]),
+    MongooseModule.forFeature([
+      { name: Product.name, schema: ProductSchema },
+      { name: Review.name, schema: ReviewSchema }, // Phase 2 P5
+    ]),
     // Public key only: this service checks tokens but never creates them.
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -38,7 +45,17 @@ import { ProductsService } from './products/products.service';
       }),
     }),
   ],
-  controllers: [ProductsController, ProductsGrpcController, ImagesController],
-  providers: [ProductsService, ImagesService],
+  controllers: [
+    ProductsController,
+    ProductsGrpcController,
+    ImagesController,
+    ReviewsController,
+  ],
+  providers: [
+    ProductsService,
+    ImagesService,
+    ReviewsService,
+    PurchaseCheckClient,
+  ],
 })
 export class ProductModule {}

@@ -10,6 +10,7 @@ import { INVENTORY_ENTITIES } from './database/entities';
 import {
   FlashSaleAdminController,
   FlashSaleInternalController,
+  FlashSalePublicController,
 } from './flash/flash-sale.controller';
 import { FlashSaleService } from './flash/flash-sale.service';
 import { InternalTokenGuard } from './flash/internal-token.guard';
@@ -50,6 +51,7 @@ import { StockController } from './stock/stock.controller';
     StockController,
     FlashSaleAdminController,
     FlashSaleInternalController,
+    FlashSalePublicController,
   ],
   providers: [
     ReservationService,

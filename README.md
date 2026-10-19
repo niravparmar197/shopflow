@@ -226,6 +226,7 @@ Client → Gateway (:3000) → User service (:3001) → PostgreSQL users_db
 | `POST /v1/auth/reset-password` | none  | `{ token, password }` → `204`; logs out every device |
 | `POST /v1/auth/change-password` | Bearer + `rt` cookie | `{ currentPassword, newPassword }` → `204`; this login stays, other devices are logged out |
 | `GET/POST /v1/users/me/addresses`, `PATCH/DELETE …/:id` | Bearer token | address book (Phase 2 P2): max 10; the first one is the default; deleting the default makes the newest the default |
+| `GET /v1/users/me/wishlist`, `PUT/DELETE …/:productId` | Bearer token | saved products (Phase 2 P5): ids only, newest first, max 100; saving twice or removing a missing one is fine |
 
 ### Account: verify email, forgot / reset password (Phase 2 P3)
 
@@ -258,6 +259,26 @@ Admin  → presigned POST ──▶ S3 / MinIO  (server never handles the file)
 - Admin create / update / image confirm return the **same product shape as the public API** (`id`, image URLs), documented with response DTOs in Swagger
 - Images: S3 presigned POST (5 MB, type locked) → `tmp/` → confirm → `products/`; `tmp/` auto-deleted after 1 day
 - Tests: unit (cache, images with S3 mocked) + integration with real MongoDB + Redis via Testcontainers (`npm run test:e2e:product`), covering pagination, roles, 409s, cache invalidation, concurrent edits and the gRPC contract
+
+### Shop polish (Phase 2 P5)
+
+| Endpoint | Auth | Notes |
+| --- | --- | --- |
+| `GET /v1/products?sort=newest\|price_asc\|price_desc` | none | the cursor remembers its sort (a cursor from another sort is a 400); price sorts page on `(price, _id)` |
+| `GET /v1/products?ids=a,b,c` | none | exactly these products, in this order, up to 50 (wishlist, deals); gRPC `GetProductsByIds` |
+| `GET /v1/products/categories` | none | `{ slug, count }` of active products, A to Z; gRPC `ListCategories`, cached like lists |
+| `GET /v1/products/:id/reviews?cursor` | none | newest first; the first page adds `summary` (average, count, stars 1–5) |
+| `GET /v1/products/:id/reviews/mine` | Bearer | your review, or `404 REVIEW_NOT_FOUND` |
+| `PUT /v1/products/:id/reviews` | Bearer | write or edit `{ rating 1–5, title?, body 10–2000, authorName }`; `403 NOT_A_BUYER` until the order is delivered |
+| `DELETE /v1/products/:id/reviews` | Bearer | delete yours |
+| `GET /v1/flash-sales` | none | live sales: units left, seconds left, limit per customer; soonest ending first (inventory, Redis) |
+
+- **Only buyers review**: the product service asks the order service `GET /v1/internal/purchases?userId&productId` (service token, 2 s timeout). A synchronous call is fine on this rare write; reading reviews never needs it. If order is down: **fail closed**, `503 PURCHASE_CHECK_UNAVAILABLE` (no review beats a fake one)
+- **One review per user per product**: a unique index. Two first reviews at the same moment: one insert wins, the other becomes an edit (duplicate-key → retry)
+- **Rating totals**: the product keeps `ratingSum` + `ratingCount`, changed with an atomic `$inc` by the difference (new: `+rating, +1`; edit: `+new−old, 0`; delete: `−rating, −1`). Two reviews at once can't overwrite each other's totals (a "read all, average, save" would). The average is worked out when read. The review is the source of truth: a crash between the two writes leaves the totals off by one review until it is edited
+- **Proto**: only new fields and a new RPC (`sort = 7`, `rating_avg = 12`, `rating_count = 13`, `ListCategories`), so old clients keep working
+- The `InternalTokenGuard` moved to `@app/common` (inventory and order use it)
+- Cart lines also carry the first product photo (`image`)
 
 ## Cart + coupons (F3)
 

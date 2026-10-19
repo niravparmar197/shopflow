@@ -28,6 +28,7 @@ import { OrderViewProjector } from './read-model/order-view.projector';
 import { SagaEventsConsumer } from './saga/saga-events.consumer';
 import { OrderSagaService } from './saga/order-saga.service';
 import { InvoicesService } from './invoices/invoices.service';
+import { InternalPurchasesController } from './orders/internal-purchases.controller';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { InvoicesService } from './invoices/invoices.service';
     }),
   ],
   controllers: [
+    InternalPurchasesController, // product asks: did this user get it? (P5)
     CartController,
     CouponsController,
     OrdersController,

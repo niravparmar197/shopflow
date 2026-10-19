@@ -202,6 +202,7 @@ services:
       AWS_ACCESS_KEY_ID: shopflow # MinIO root user (Stage 1 keeps images on the box)
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       ASSET_BASE_URL: https://${DOMAIN}/assets
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN} # asks order "did they buy it?" (reviews, P5)
     depends_on: [mongo, redis, minio]
 
   order:

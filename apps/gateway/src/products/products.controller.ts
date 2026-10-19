@@ -53,6 +53,17 @@ export class ProductsController implements OnModuleInit {
   @ApiError(503, 'SERVICE_UNAVAILABLE (product service down)')
   @ApiError(504, 'GATEWAY_TIMEOUT (no answer within 2 s)')
   async list(@Req() req: Request, @Query() q: ListProductsQuery) {
+    if (q.ids) {
+      const { items } = await this.call(
+        this.products.getProductsByIds({ ids: q.ids }, this.metadata(req)),
+      );
+      // In the order asked for (the ids are someone's list).
+      const byId = new Map(items.map((p) => [p.id, p]));
+      return {
+        items: q.ids.flatMap((id) => byId.get(id) ?? []).map(toJson),
+        nextCursor: null,
+      };
+    }
     const res = await this.call(
       this.products.listProducts(
         {
@@ -62,11 +73,20 @@ export class ProductsController implements OnModuleInit {
           q: q.q ?? '',
           cursor: q.cursor ?? '',
           limit: q.limit,
+          sort: q.sort ?? '',
         },
         this.metadata(req),
       ),
     );
     return { items: res.items.map(toJson), nextCursor: res.nextCursor || null };
+  }
+
+  /** Categories with product counts (public, Phase 2 P5) */
+  @Get('categories')
+  @ApiOkResponse({ description: 'items[]: { slug, count }' })
+  @ApiError(503, 'SERVICE_UNAVAILABLE (product service down)')
+  async categories(@Req() req: Request) {
+    return this.call(this.products.listCategories({}, this.metadata(req)));
   }
 
   /** One product by id or slug (public) */

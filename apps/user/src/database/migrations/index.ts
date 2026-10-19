@@ -4,10 +4,12 @@ import { CreateUsersAndRefreshTokens1791875564338 } from './1791875564338-Create
 import { AddRefreshTokenFamily1791878522479 } from './1791878522479-AddRefreshTokenFamily';
 import { AddAddresses1792347866375 } from './1792347866375-AddAddresses';
 import { AccountTokens1792349309814 } from './1792349309814-AccountTokens';
+import { Wishlist1792383454395 } from './1792383454395-Wishlist';
 
 export const MIGRATIONS = [
   CreateUsersAndRefreshTokens1791875564338,
   AddRefreshTokenFamily1791878522479,
   AddAddresses1792347866375,
   AccountTokens1792349309814,
+  Wishlist1792383454395,
 ];

@@ -1,5 +1,16 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  Min,
+} from 'class-validator';
+
+export const SORTS = ['newest', 'price_asc', 'price_desc'] as const;
+export type ProductSort = (typeof SORTS)[number];
 
 export class ListProductsQuery {
   @IsOptional()
@@ -28,6 +39,11 @@ export class ListProductsQuery {
   @IsString()
   @Length(1, 200)
   cursor?: string;
+
+  /** Order of the list (Phase 2 P5). Default: newest first. */
+  @IsOptional()
+  @IsIn(SORTS)
+  sort?: ProductSort;
 
   // Capped so nobody can ask for the whole catalog in one request.
   @IsOptional()

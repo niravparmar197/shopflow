@@ -47,7 +47,9 @@ const LOCK_TTL_MS = 15_000;
 const LOCK_WAIT_MS = 5_000;
 const LOCK_POLL_MS = 50;
 
-type PricedLine = Required<Omit<CartLine, 'available'>> & { available: true };
+type PricedLine = Required<Omit<CartLine, 'available' | 'image'>> & {
+  available: true;
+};
 
 /**
  * Facade: the controller calls placeOrder(); behind it are the cart (Redis),

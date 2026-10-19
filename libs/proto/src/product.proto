@@ -9,6 +9,7 @@ service ProductService {
   rpc GetProduct (GetProductRequest) returns (Product);
   rpc ListProducts (ListProductsRequest) returns (ListProductsResponse);
   rpc GetProductsByIds (GetProductsByIdsRequest) returns (GetProductsByIdsResponse); // used by order (F3)
+  rpc ListCategories (ListCategoriesRequest) returns (ListCategoriesResponse); // Phase 2 P5
 }
 
 message GetProductRequest {
@@ -22,6 +23,7 @@ message ListProductsRequest {
   string q = 4;
   string cursor = 5;
   int32 limit = 6;
+  string sort = 7; // "" or "newest" | "price_asc" | "price_desc" (Phase 2 P5)
 }
 
 message Product {
@@ -37,6 +39,9 @@ message Product {
   string created_at = 10;
   // Free-form per-category attributes ({"ram":"8GB"}), as a JSON object string.
   string attributes_json = 11;
+  // Reviews (Phase 2 P5): average 1-5 (0 when none) and how many.
+  double rating_avg = 12;
+  int32 rating_count = 13;
 }
 
 message ListProductsResponse {
@@ -50,4 +55,15 @@ message GetProductsByIdsRequest {
 
 message GetProductsByIdsResponse {
   repeated Product items = 1;
+}
+
+message ListCategoriesRequest {}
+
+message Category {
+  string slug = 1;  // "phones"
+  int32 count = 2;  // active products in it
+}
+
+message ListCategoriesResponse {
+  repeated Category items = 1;
 }

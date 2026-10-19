@@ -186,8 +186,12 @@ locals {
         S3_BUCKET        = aws_s3_bucket.products.bucket
         S3_REGION        = var.region
         ASSET_BASE_URL   = local.public_url # keys are products/<id>/..., served by CloudFront
+        ORDER_SERVICE_URL = "http://order.${local.ns}:3000" # reviews: buyer check (P5)
       }
-      secrets = { JWT_PUBLIC_KEY = "${local.ssm}/JWT_PUBLIC_KEY" }
+      secrets = {
+        JWT_PUBLIC_KEY     = "${local.ssm}/JWT_PUBLIC_KEY"
+        INTERNAL_API_TOKEN = "${local.ssm}/INTERNAL_API_TOKEN"
+      }
     }
     order = {
       db = "orders_db"
