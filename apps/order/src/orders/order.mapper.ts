@@ -21,3 +21,13 @@ export function toOrderResponse(order: Order) {
     createdAt: order.createdAt,
   };
 }
+
+/** Admin view of an order: the public shape plus who placed it. */
+export function toAdminOrderResponse(order: Order) {
+  return {
+    ...toOrderResponse(order),
+    userId: order.userId,
+    customerEmail: order.customerEmail,
+    updatedAt: order.updatedAt,
+  };
+}

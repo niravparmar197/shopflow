@@ -19,6 +19,7 @@ import { FlashGateClient } from './flash/flash-gate.client';
 import { IdempotencyService } from './idempotency/idempotency.service';
 import { JobsModule } from './jobs/jobs.module';
 import { CheckoutService } from './orders/checkout.service';
+import { AdminOrdersController } from './orders/admin-orders.controller';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
 import { OrderReadModelConsumer } from './read-model/order-read-model.consumer';
@@ -56,7 +57,12 @@ import { OrderSagaService } from './saga/order-saga.service';
       }),
     }),
   ],
-  controllers: [CartController, CouponsController, OrdersController],
+  controllers: [
+    CartController,
+    CouponsController,
+    OrdersController,
+    AdminOrdersController,
+  ],
   providers: [
     CartService,
     CartRepository,

@@ -160,6 +160,12 @@ export class GatewayModule implements NestModule {
       .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
       .forRoutes('v1/coupons{/*path}');
 
+    // Admin: every customer's orders. JWT here; the order service checks the
+    // admin role again (RolesGuard), like coupons above.
+    consumer
+      .apply(jwtMiddleware(this.jwt), proxyTo(orderService))
+      .forRoutes('v1/admin/orders{/*path}');
+
     // 7) Orders. Placing one is expensive (gRPC, a transaction), so it gets
     //    per-user limits, counted after the JWT check: ≤ 5 per 10 s exactly
     //    (bursts) and ≤ 10 per minute (sustained).
