@@ -1,3 +1,6 @@
 # Optional. Defaults are fine for the free tier.
 # instance_type  = "m7i-flex.large"   # or "c7i-flex.large" (4 GiB: too small for the full stack)
 # root_volume_gb = 30
+
+# Real emails through Amazon SES (Phase 2 P4). Leave out to keep Mailpit.
+# ses_sender_email = "you@example.com"

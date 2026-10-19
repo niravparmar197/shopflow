@@ -13,9 +13,14 @@ export interface OutgoingEmail {
   headers?: Record<string, string>;
 }
 
-/** The seam for providers: SMTP now (Mailpit locally), SES later (F11). */
+/** The seam for providers: SMTP (Mailpit locally) or SES (Phase 2 P4). */
 export interface EmailSender {
   send(msg: OutgoingEmail): Promise<{ messageId: string }>;
+}
+
+/** Retrying won't help (rejected address, unverified sender): fail now. */
+export class PermanentEmailError extends Error {
+  override readonly name = 'PermanentEmailError';
 }
 
 @Injectable()

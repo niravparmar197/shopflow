@@ -65,6 +65,20 @@ export const envSchema = z.object({
   // The web app's address, for links in emails (reset password, verify).
   WEB_URL: z.url().default('http://localhost:5000'),
   MAIL_FROM: z.string().min(1).default('ShopFlow <no-reply@shopflow.local>'),
+  // Who sends the emails: SMTP (Mailpit locally) or Amazon SES (Phase 2 P4).
+  // SES uses the AWS role of the box / task; MAIL_FROM must be verified in SES.
+  EMAIL_PROVIDER: z.enum(['smtp', 'ses']).default('smtp'),
+  SES_REGION: z.string().min(1).default('ap-southeast-2'),
+  // GST invoices (order service, Phase 2 P4). Demo seller: not a real GSTIN.
+  SELLER_NAME: z.string().min(1).default('ShopFlow Retail (demo)'),
+  SELLER_ADDRESS: z
+    .string()
+    .min(1)
+    .default('12, SG Highway, Ahmedabad, Gujarat 380015'),
+  SELLER_STATE: z.string().min(1).default('Gujarat'),
+  SELLER_GSTIN: z.string().min(1).default('24AAACS1234F1Z5'),
+  // Prices include GST at this one rate (a real shop sets it per product).
+  GST_RATE_PERCENT: z.coerce.number().min(0).max(28).default(18),
   // First retry delay for notification jobs (then ×2). Tests use ~100 ms.
   NOTIFY_BACKOFF_MS: z.coerce.number().int().positive().default(2_000),
 

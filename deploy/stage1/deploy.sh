@@ -84,6 +84,12 @@ q() { printf "'%s'" "${1//\'/\'\\\'\'}"; }
     echo "$k=$(q "$(param "$k")")"
   done
   RL=$(param RATE_LIMIT_GLOBAL_PER_MIN); [ -n "$RL" ] && echo "RATE_LIMIT_GLOBAL_PER_MIN=$(q "$RL")"
+  # Real emails (Phase 2 P4): MAIL_FROM in SSM (terraform ses.tf) = use SES.
+  MF=$(param MAIL_FROM)
+  if [ -n "$MF" ]; then
+    echo "EMAIL_PROVIDER='ses'"
+    echo "MAIL_FROM=$(q "$MF")"
+  fi
   true
 } > "$SHARED/.env"
 chmod 600 "$SHARED/.env"

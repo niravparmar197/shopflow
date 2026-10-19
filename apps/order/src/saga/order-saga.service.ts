@@ -16,6 +16,7 @@ import {
   OutboxService,
   PoisonMessageError,
 } from '@app/kafka';
+import { InvoicesService } from '../invoices/invoices.service';
 import { Order } from '../orders/order.entity';
 import type { OrderAction } from '../orders/order-status';
 import { orderTransitions, revenuePaise } from '../metrics';
@@ -46,7 +47,10 @@ const count =
 export class OrderSagaService {
   private readonly logger = new Logger(OrderSagaService.name);
 
-  constructor(private readonly outbox: OutboxService) {}
+  constructor(
+    private readonly outbox: OutboxService,
+    private readonly invoices: InvoicesService,
+  ) {}
 
   async onStockReserved(
     m: EntityManager,
@@ -106,6 +110,8 @@ export class OrderSagaService {
     if (!this.tryApply(order, 'pay')) return;
 
     await m.getRepository(Order).save(order);
+    // The GST invoice is numbered in the same transaction as PAID.
+    await this.invoices.issue(m, order);
     await this.outbox.add<OrderPaidV1>(m, {
       aggregateType: 'order',
       aggregateId: order.id,

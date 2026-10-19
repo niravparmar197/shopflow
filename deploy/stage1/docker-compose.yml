@@ -245,6 +245,10 @@ services:
     env_file: env/notification.env
     environment:
       WEB_URL: https://${DOMAIN} # links in reset / verify emails
+      # SES when deploy.sh found MAIL_FROM in SSM, else Mailpit (Phase 2 P4)
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      MAIL_FROM: ${MAIL_FROM:-ShopFlow <no-reply@shopflow.local>}
+      SES_REGION: ap-southeast-2
     depends_on:
       mongo: { condition: service_started }
       redis: { condition: service_started }

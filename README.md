@@ -314,6 +314,15 @@ POST /v1/orders ─▶ Redis checkout lock (per user)
 | `POST /v1/admin/orders/:id/ship` | admin | PAID → SHIPPED; body `{ carrier?, trackingNumber? }` (Phase 2 P2) |
 | `POST /v1/admin/orders/:id/deliver` | admin | SHIPPED → DELIVERED |
 | `POST /v1/admin/orders/:id/cancel` | admin | same rules as the user cancel (reason `ADMIN_CANCELLED`) |
+| `GET /v1/orders/:id/invoice`, `GET /v1/admin/orders/:id/invoice` | user / admin | GST tax invoice PDF (Phase 2 P4); `409 INVOICE_NOT_READY` before payment |
+
+### GST invoices (Phase 2 P4)
+
+- **Issued at PAID**, in the same transaction as the status change (the saga step). Paid orders from before P4 get theirs on the first download
+- **Numbers** `SF/26-27/000042`: per Indian financial year (April–March, India time), at most 16 characters as GST asks. The next number is an UPSERT on `invoice_counters` that holds the row lock until commit: no duplicates, and a rolled-back payment gives its number back (no gaps)
+- **Tax math** (`invoices/invoice-math.ts`, pure + unit-tested): prices include GST, so `taxable = gross × 100 / (100 + rate)`. A coupon is spread over the lines by value (largest remainder, to the paisa). Same state as the seller → CGST + SGST; another state (from the delivery address) → IGST. Every part adds up exactly to what was paid
+- **Snapshot**: the rate and the seller's state are stored on the invoice, so a config change never rewrites an old invoice. One rate for all products (`GST_RATE_PERCENT`, default 18); the seller (`SELLER_*`) is a demo
+- **PDF** with pdfkit, rendered on request (A4, amount in words, "Rs." because the built-in fonts have no ₹). A cancelled + refunded order keeps its invoice, marked cancelled
 
 | Error code                                             | HTTP | Meaning                                                                    |
 | ------------------------------------------------------ | ---- | -------------------------------------------------------------------------- |
@@ -393,7 +402,7 @@ Compensation is idempotent twice over: `processed_events` drops redelivered even
 ```
 order-/payment-events ─▶ NotificationsConsumer ─┬─ order.created ─▶ Mongo orders_view (projection)
                                                 └─ other events ─▶ Command ─▶ BullMQ "notifications"
-BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SMTP → Mailpit; SES later)
+BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SMTP → Mailpit, or Amazon SES)
                                                  └─▶ Mongo notification_logs: QUEUED → SENT / FAILED
 ```
 
@@ -409,6 +418,7 @@ BullMQ ─▶ worker (5 at once, ≤ 10/s) ─▶ handler ─▶ EmailSender (SM
 | `user.password-reset-requested` | Reset your password (link) |
 | `user.password-changed` | Your password was changed (security notice) |
 
+- **Amazon SES** (Phase 2 P4): `EMAIL_PROVIDER=ses` swaps the sender (one factory provider; nothing else changes). No keys: the SDK uses the box's or the task's AWS role. SES errors that a retry can't fix (`MessageRejected`, unverified sender, paused account) fail at once; throttling and 5xx retry with backoff
 - **Account emails** (Phase 2 P3) come from `user-events` and carry the address themselves (no projection). Links use `WEB_URL`. The log stores `userId`, never the link.
 - **Local projection**: notification never calls the order or user service. The buyer's email is snapshotted on the order at checkout and sent in `order.created` (an optional field, so still version 1).
 - **Command pattern**: the planner turns an event into commands (`SendEmailCommand`); the worker runs the handler for the job name. A new channel (SMS) = one command + one handler.
@@ -589,6 +599,8 @@ least-privilege IAM user that can only push to ECR and run the Stage 1 deploy.
 ### Stage 1: one box ([docs/deploy-stage1.md](docs/deploy-stage1.md))
 
 One free-tier EC2 (`m7i-flex.large`), Docker Compose with the whole stack, **Caddy** for automatic Let's Encrypt HTTPS on a DuckDNS name. Only 80/443 open. Admin UIs (`/docs`, `/grafana`, `/jaeger`, `/mail`) behind auth; `/metrics` and `/internal` blocked at the edge.
+
+**Real emails (Phase 2 P4, optional):** set `ses_sender_email = "you@example.com"` in `infra/terraform/stage1/terraform.tfvars`, run `terraform apply`, and click the link AWS emails to that address. The next deploy sees `MAIL_FROM` in SSM and switches from Mailpit to SES. A new SES account is in the **sandbox**: it only sends to verified addresses (verify your test inbox the same way) and up to 200 emails a day. A Gmail address as the sender may land in spam (no domain of our own to sign with); a custom domain fixes that.
 
 ### Stage 2: managed AWS (`infra/terraform/stage2`)
 
