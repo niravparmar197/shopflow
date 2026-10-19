@@ -9,6 +9,8 @@ import {
   OrderCreatedV1Schema,
   OrderEvents,
   OrderFailedV1Schema,
+  OrderShippedV1Schema,
+  OrderDeliveredV1Schema,
   OrderPaidV1Schema,
   PaymentEvents,
   PaymentRefundedV1Schema,
@@ -41,6 +43,8 @@ export class NotificationsConsumer extends KafkaConsumerCore {
     [OrderEvents.PAID]: OrderPaidV1Schema,
     [OrderEvents.CANCELLED]: OrderCancelledV1Schema,
     [OrderEvents.FAILED]: OrderFailedV1Schema,
+    [OrderEvents.SHIPPED]: OrderShippedV1Schema,
+    [OrderEvents.DELIVERED]: OrderDeliveredV1Schema,
     [PaymentEvents.REFUNDED]: PaymentRefundedV1Schema,
   };
 

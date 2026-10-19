@@ -4,6 +4,7 @@ import {
   type OrderCancelledV1,
   OrderEvents,
   type OrderFailedV1,
+  type OrderShippedV1,
   PaymentEvents,
   type PaymentRefundedV1,
 } from '@app/events';
@@ -43,6 +44,16 @@ export class NotificationPlanner {
           ...base,
           reason: (e.data as OrderFailedV1).reason,
         });
+      case OrderEvents.SHIPPED: {
+        const d = e.data as OrderShippedV1;
+        return email('order-shipped', {
+          ...base,
+          carrier: d.carrier ?? '',
+          trackingNumber: d.trackingNumber ?? '',
+        });
+      }
+      case OrderEvents.DELIVERED:
+        return email('order-delivered', base);
       case PaymentEvents.REFUNDED:
         return email('payment-refunded', {
           ...base,

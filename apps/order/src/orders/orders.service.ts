@@ -57,6 +57,8 @@ const STEP_LABELS: Record<string, string> = {
   FAILED: 'Order could not be placed',
   CANCELLED: 'Order cancelled',
   REFUNDED: 'Refund issued',
+  SHIPPED: 'Shipped',
+  DELIVERED: 'Delivered',
 };
 
 const encodeCursor = (c: Cursor) =>

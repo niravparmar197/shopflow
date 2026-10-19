@@ -179,15 +179,26 @@ export class ReservationService {
     orderId: string,
     userId: string,
   ): Promise<AfterCommit | void> {
-    const lines = await this.moveReservations(
+    // Not paid yet: the hold ends (reserved → available).
+    const held = await this.moveReservations(
       m,
       orderId,
       ReservationStatus.RELEASED,
     );
-    await this.putBack(m, lines);
-    this.logger.log(
-      `Order ${orderId}: released ${lines.length} reservation(s)`,
+    await this.putBack(m, held);
+    // Paid, then cancelled before shipping (Phase 2): the sold units come
+    // back on sale (available only; they left "reserved" at commit).
+    const sold = await this.moveReservations(
+      m,
+      orderId,
+      ReservationStatus.RETURNED,
+      ReservationStatus.COMMITTED,
     );
+    await this.restock(m, sold);
+    this.logger.log(
+      `Order ${orderId}: released ${held.length}, returned ${sold.length} reservation(s)`,
+    );
+    const lines = [...held, ...sold];
     if (!lines.length) return;
     const giveBack = this.returnFlashTokens(userId, lines);
     return async () => {
@@ -260,6 +271,18 @@ export class ReservationService {
   }
 
   /** Back on sale. `lines` must be sorted (the shared lock order). */
+  /** Sold units back on sale (the paid order was cancelled before shipping). */
+  private async restock(m: EntityManager, lines: Line[]) {
+    for (const l of lines) {
+      await m
+        .createQueryBuilder()
+        .update(Stock)
+        .set({ available: () => 'available + :qty' })
+        .where('product_id = :id', { id: l.productId, qty: l.quantity })
+        .execute();
+    }
+  }
+
   private async putBack(m: EntityManager, lines: Line[]) {
     for (const l of lines) {
       await m
@@ -275,14 +298,18 @@ export class ReservationService {
   }
 
   /**
-   * Only rows still RESERVED move, so even a DIFFERENT event (not just a
+   * Only rows still in `from` (RESERVED by default) move, so even a DIFFERENT event (not just a
    * redelivery, which processed_events already skips) can't commit or
    * release the same reservation twice: it finds 0 rows.
    */
   private async moveReservations(
     m: EntityManager,
     orderId: string,
-    to: ReservationStatus.COMMITTED | ReservationStatus.RELEASED,
+    to:
+      | ReservationStatus.COMMITTED
+      | ReservationStatus.RELEASED
+      | ReservationStatus.RETURNED,
+    from: ReservationStatus = ReservationStatus.RESERVED,
   ): Promise<Line[]> {
     const res = await m
       .createQueryBuilder()
@@ -290,7 +317,7 @@ export class ReservationService {
       .set({ status: to })
       .where('order_id = :orderId AND status = :s', {
         orderId,
-        s: ReservationStatus.RESERVED,
+        s: from,
       })
       // A string, not an array: array entries are matched to entity
       // properties, and an unknown one ('product_id') is silently dropped.

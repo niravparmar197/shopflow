@@ -3,6 +3,8 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AddressesController } from './addresses/addresses.controller';
+import { AddressesService } from './addresses/addresses.service';
 import {
   CommonModule,
   Env,
@@ -52,7 +54,7 @@ import { UsersService } from './users/users.service';
       }),
     }),
   ],
-  controllers: [AuthController, UsersController],
-  providers: [AuthService, UsersService, TokenService],
+  controllers: [AuthController, UsersController, AddressesController],
+  providers: [AuthService, UsersService, TokenService, AddressesService],
 })
 export class UserModule {}

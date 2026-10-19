@@ -1,7 +1,12 @@
 import type { NotificationCommand } from './notification-command';
 
 export type EmailTemplate =
-  'order-paid' | 'order-cancelled' | 'order-failed' | 'payment-refunded';
+  | 'order-paid'
+  | 'order-cancelled'
+  | 'order-failed'
+  | 'payment-refunded'
+  | 'order-shipped'
+  | 'order-delivered';
 
 export interface SendEmailPayload {
   to: string;

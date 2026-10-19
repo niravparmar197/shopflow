@@ -20,6 +20,7 @@ import { IdempotencyService } from './idempotency/idempotency.service';
 import { JobsModule } from './jobs/jobs.module';
 import { CheckoutService } from './orders/checkout.service';
 import { AdminOrdersController } from './orders/admin-orders.controller';
+import { OrderActionsService } from './orders/order-actions.service';
 import { OrdersController } from './orders/orders.controller';
 import { OrdersService } from './orders/orders.service';
 import { OrderReadModelConsumer } from './read-model/order-read-model.consumer';
@@ -64,6 +65,7 @@ import { OrderSagaService } from './saga/order-saga.service';
     AdminOrdersController,
   ],
   providers: [
+    OrderActionsService,
     CartService,
     CartRepository,
     CatalogClient,

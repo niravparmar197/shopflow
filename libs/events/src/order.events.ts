@@ -6,6 +6,8 @@ export const OrderEvents = {
   FAILED: 'order.failed',
   PAID: 'order.paid', // Inventory commits the reservation (reserved → sold)
   CANCELLED: 'order.cancelled', // Inventory releases stock; Payment refunds if paid
+  SHIPPED: 'order.shipped', // admin handed it to the courier (Phase 2)
+  DELIVERED: 'order.delivered', // the customer has it (Phase 2)
 } as const;
 
 const OrderItem = z.object({
@@ -56,6 +58,23 @@ export type OrderPaidV1 = z.infer<typeof OrderPaidV1Schema>;
 export const OrderCancelledV1Schema = z.object({
   orderId: z.uuid(),
   userId: z.uuid(),
-  reason: z.string().min(1), // PAYMENT_TIMEOUT, CARD_DECLINED, USER_CANCELLED (F8)…
+  reason: z.string().min(1), // PAYMENT_TIMEOUT, CARD_DECLINED, USER_CANCELLED, ADMIN_CANCELLED…
 });
 export type OrderCancelledV1 = z.infer<typeof OrderCancelledV1Schema>;
+
+// Fulfilment (Phase 2). The read model adds the steps to the timeline and
+// the notification service emails the customer. No compensation: a shipped
+// order can't be cancelled (the state machine refuses).
+export const OrderShippedV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+  carrier: z.string().nullable(),
+  trackingNumber: z.string().nullable(),
+});
+export type OrderShippedV1 = z.infer<typeof OrderShippedV1Schema>;
+
+export const OrderDeliveredV1Schema = z.object({
+  orderId: z.uuid(),
+  userId: z.uuid(),
+});
+export type OrderDeliveredV1 = z.infer<typeof OrderDeliveredV1Schema>;

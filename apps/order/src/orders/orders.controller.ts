@@ -4,6 +4,7 @@ import {
   DefaultValuePipe,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -27,6 +28,7 @@ import {
   type JwtPayload,
 } from '@app/common';
 import { IdempotencyService } from '../idempotency/idempotency.service';
+import { OrderActionsService } from './order-actions.service';
 import { CheckoutService } from './checkout.service';
 import { PlaceOrderDto } from './dto/place-order.dto';
 import { toOrderResponse } from './order.mapper';
@@ -42,6 +44,7 @@ export class OrdersController {
     private readonly checkout: CheckoutService,
     private readonly orders: OrdersService,
     private readonly idempotency: IdempotencyService,
+    private readonly actions: OrderActionsService,
   ) {}
 
   /**
@@ -145,6 +148,29 @@ export class OrdersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.orders.tracking(user.sub, id);
+  }
+
+  /**
+   * Cancel your order (before it ships).
+   *
+   * PENDING / CONFIRMED / PAID → CANCELLED (reason USER_CANCELLED). The saga
+   * does the rest: the stock goes back on sale and a paid order is refunded.
+   */
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @ApiOkResponse({ description: 'The order, now CANCELLED' })
+  @ApiError(404, "ORDER_NOT_FOUND (also for other users' orders)")
+  @ApiError(
+    409,
+    'INVALID_ORDER_TRANSITION (already shipped, delivered, cancelled or failed)',
+  )
+  async cancel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return toOrderResponse(
+      await this.actions.cancel(id, 'USER_CANCELLED', user.sub),
+    );
   }
 
   /** One order with its items (the write model: always current) */

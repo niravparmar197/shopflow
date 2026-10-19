@@ -1,14 +1,19 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { ApiError, JwtAuthGuard, Roles, RolesGuard } from '@app/common';
 import { AdminOrdersQuery } from './dto/admin-orders.query';
+import { ShipOrderDto } from './dto/ship-order.dto';
+import { OrderActionsService } from './order-actions.service';
 import { toAdminOrderResponse } from './order.mapper';
 import { OrdersService } from './orders.service';
 
@@ -21,7 +26,10 @@ import { OrdersService } from './orders.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminOrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly actions: OrderActionsService,
+  ) {}
 
   /** All orders, newest first; optional status filter, cursor paging */
   @Get()
@@ -42,5 +50,40 @@ export class AdminOrdersController {
   @ApiError(404, 'ORDER_NOT_FOUND')
   async getOne(@Param('id', ParseUUIDPipe) id: string) {
     return toAdminOrderResponse(await this.orders.findAny(id));
+  }
+
+  /** Hand a PAID order to the courier (optional carrier + tracking number) */
+  @Post(':id/ship')
+  @HttpCode(200)
+  @ApiError(404, 'ORDER_NOT_FOUND')
+  @ApiError(409, 'INVALID_ORDER_TRANSITION (only a PAID order can ship)')
+  async ship(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ShipOrderDto,
+  ) {
+    return toAdminOrderResponse(await this.actions.ship(id, dto));
+  }
+
+  /** Mark a SHIPPED order as delivered */
+  @Post(':id/deliver')
+  @HttpCode(200)
+  @ApiError(404, 'ORDER_NOT_FOUND')
+  @ApiError(409, 'INVALID_ORDER_TRANSITION (only a SHIPPED order)')
+  async deliver(@Param('id', ParseUUIDPipe) id: string) {
+    return toAdminOrderResponse(await this.actions.deliver(id));
+  }
+
+  /** Cancel any order before it ships (a paid one is refunded) */
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @ApiError(404, 'ORDER_NOT_FOUND')
+  @ApiError(
+    409,
+    'INVALID_ORDER_TRANSITION (already shipped, delivered, cancelled or failed)',
+  )
+  async cancel(@Param('id', ParseUUIDPipe) id: string) {
+    return toAdminOrderResponse(
+      await this.actions.cancel(id, 'ADMIN_CANCELLED'),
+    );
   }
 }

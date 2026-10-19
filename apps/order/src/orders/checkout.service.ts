@@ -16,12 +16,15 @@ import { CouponsService } from '../coupons/coupons.service';
 import { FlashGateClient } from '../flash/flash-gate.client';
 import { checkoutRejected, ordersPlaced } from '../metrics';
 import { OrderItem } from './order-item.entity';
+import type { ShippingAddressDto } from './dto/shipping-address.dto';
 import { Order } from './order.entity';
 import { OrderStatus } from './order-status';
 
 export interface PlaceOrderInput {
   /** The total the user saw. If prices moved since, we stop and say so. */
   expectedTotalPaise?: number;
+  /** Where to deliver; stored on the order as a copy. */
+  shippingAddress?: ShippingAddressDto;
 }
 
 /** Runs inside the checkout transaction, just before it commits. */
@@ -183,6 +186,12 @@ export class CheckoutService {
             couponCode: coupon?.code ?? null,
             currency: 'INR',
             customerEmail: customerEmail ?? null,
+            shippingAddress: input.shippingAddress
+              ? {
+                  ...input.shippingAddress,
+                  line2: input.shippingAddress.line2 || null,
+                }
+              : null,
             // Snapshot of name and price as charged.
             items: lines.map((l) =>
               orderItems.create({

@@ -6,6 +6,7 @@ import { OrderSagaInventory1791892751052 } from './1791892751052-OrderSagaInvent
 import { OrderCustomerEmail1791901816798 } from './1791901816798-OrderCustomerEmail';
 import { OrderExpiry1791910154100 } from './1791910154100-OrderExpiry';
 import { OrderViews1791956673352 } from './1791956673352-OrderViews';
+import { OrderShipping1792348030665 } from './1792348030665-OrderShipping';
 
 export const MIGRATIONS = [
   CreateCoupons1791887902198,
@@ -14,4 +15,5 @@ export const MIGRATIONS = [
   OrderCustomerEmail1791901816798,
   OrderExpiry1791910154100,
   OrderViews1791956673352,
+  OrderShipping1792348030665,
 ];

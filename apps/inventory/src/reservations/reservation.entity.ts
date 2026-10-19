@@ -10,6 +10,7 @@ export enum ReservationStatus {
   RESERVED = 'RESERVED',
   RELEASED = 'RELEASED', // order cancelled / failed: stock goes back (F6, F8)
   COMMITTED = 'COMMITTED', // paid: the stock is really gone (F6)
+  RETURNED = 'RETURNED', // paid, then cancelled before shipping: back on sale (Phase 2)
 }
 
 @Entity('reservations')
